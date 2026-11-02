@@ -1,4 +1,4 @@
-import type { SalesStatsDay, SalesStatsReason } from "@shared/kpi"
+import type { SalesStatsDay, SalesStatsDelay, SalesStatsReason } from "@shared/kpi"
 
 // Dates are handled as yyyy-MM-dd strings and computed in UTC, so the time zone of the phone never shifts a day.
 
@@ -11,6 +11,8 @@ export type Period = {
   end: string
   sold: number
   cancelled: number
+  /** Sold, not cancelled, but never paid. */
+  bank: number
 }
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
@@ -43,6 +45,7 @@ export function buildPeriods(days: SalesStatsDay[], granularity: Granularity, fr
       end: periodEnd(start, granularity),
       sold: 0,
       cancelled: 0,
+      bank: 0,
     }
     periods.push(period)
     byKey.set(period.key, period)
@@ -52,6 +55,7 @@ export function buildPeriods(days: SalesStatsDay[], granularity: Granularity, fr
     if (!period) continue
     period.sold += day.sold
     period.cancelled += day.cancelled
+    period.bank += day.bankAfval ?? 0
   }
   return periods
 }
@@ -114,6 +118,54 @@ export function reasonsIn(
     .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "nl"))
 }
 
+/** The steps of "after how many days": up to and including `upTo`, the last without an end. */
+const DELAY_STEPS = [
+  { label: "0–7 dagen", upTo: 7 },
+  { label: "8–14 dagen", upTo: 14 },
+  { label: "15–30 dagen", upTo: 30 },
+  { label: "31–60 dagen", upTo: 60 },
+  { label: "61–90 dagen", upTo: 90 },
+  { label: "91–180 dagen", upTo: 180 },
+  { label: "181–365 dagen", upTo: 365 },
+  { label: "Na een jaar", upTo: Infinity },
+]
+
+export type DelayStep = { label: string; opgezegd: number; bank: number }
+
+/** The sales of one period that fell away, per number of days after the sale. Only the steps from first to last used. */
+export function delaySteps(delays: SalesStatsDelay[], period: Pick<Period, "start" | "end">): DelayStep[] {
+  const steps: DelayStep[] = DELAY_STEPS.map(({ label }) => ({ label, opgezegd: 0, bank: 0 }))
+  for (const delay of delays) {
+    if (delay.date < period.start || delay.date > period.end) continue
+    steps[DELAY_STEPS.findIndex((step) => delay.days <= step.upTo)][delay.kind] += delay.count
+  }
+  const used = steps.flatMap((step, index) => (step.opgezegd + step.bank > 0 ? [index] : []))
+  return used.length === 0 ? [] : steps.slice(used[0], used[used.length - 1] + 1)
+}
+
+/** The number of days by which half of a period's sales of this kind had fallen away; null without any. */
+export function medianDelay(
+  delays: SalesStatsDelay[],
+  period: Pick<Period, "start" | "end">,
+  kind: SalesStatsDelay["kind"],
+): number | null {
+  const inPeriod = delays
+    .filter((delay) => delay.kind === kind && delay.date >= period.start && delay.date <= period.end)
+    .sort((a, b) => a.days - b.days)
+  const total = inPeriod.reduce((sum, delay) => sum + delay.count, 0)
+  let counted = 0
+  for (const delay of inPeriod) {
+    counted += delay.count
+    if (counted * 2 >= total) return delay.days
+  }
+  return null
+}
+
+/** Whole days from one date to another; timestamps count by their date. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((parse(to.slice(0, 10)).getTime() - parse(from.slice(0, 10)).getTime()) / 86_400_000)
+}
+
 /** Short label under a bar: "wk 37" or "sep". January also shows the year. */
 export function shortLabel(period: Period, granularity: Granularity): string {
   if (granularity === "week") return `wk ${Number(period.key.slice(6))}`
@@ -157,9 +209,9 @@ export function formatTimestamp(timestamp: string): string {
   return `${weekday} ${formatDay(date)} ${date.slice(0, 4)}${time ? `, ${time}` : ""}`
 }
 
-/** Share of the sales that has been cancelled, 0..1; null when nothing was sold. */
-export function cancelRate(period: Pick<Period, "sold" | "cancelled">): number | null {
-  return period.sold > 0 ? period.cancelled / period.sold : null
+/** Share of the sales that fell away, cancelled or never paid, 0..1; null when nothing was sold. */
+export function uitvalRate(period: Pick<Period, "sold" | "cancelled" | "bank">): number | null {
+  return period.sold > 0 ? (period.cancelled + period.bank) / period.sold : null
 }
 
 /** "25%", or "–" when nothing was sold. */

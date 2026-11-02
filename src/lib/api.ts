@@ -6,8 +6,9 @@ import {
   FunctionsRelayError,
   isAuthRetryableFetchError,
 } from "@supabase/supabase-js"
-import type { AdminUser } from "@shared/admin-types"
+import type { AdminGroup, AdminUser } from "@shared/admin-types"
 import type { ExtractedFields, FormInput } from "@shared/form-schema"
+import { POSTCODE_REGEX, normalizePostcode } from "@shared/form-schema"
 import type { KpiRequest, KpiResponse } from "@shared/kpi"
 import type { SalesMapRequest } from "@shared/sales-map"
 import type { SalesMapResponse } from "@shared/sales-map-view"
@@ -29,6 +30,7 @@ import {
   type PostcodePlace,
   type Street,
 } from "@/features/areas/doors"
+import { homeDoor, type MonteurHome, type NewMonteurHome } from "@/features/monteurs/monteur-homes"
 import { IS_TEST_DEPLOYMENT, TEST_DEPLOYMENT_HEADER } from "@/lib/deployment"
 import { ApiError, AuthError, NetworkError } from "@/lib/errors"
 import { supabase } from "@/lib/supabase"
@@ -131,9 +133,11 @@ export const DEMO_MODE: "admin" | "werver" | null =
 export async function getKpi(request: KpiRequest): Promise<KpiResponse> {
   if (import.meta.env.DEV && DEMO_MODE) {
     const { demoSalesStats } = await import("@shared/kpi-demo")
+    const { statsFor } = await import("@shared/kpi")
     const wervernr = DEMO_MODE === "werver" ? "0212BB" : (request.wervernr ?? null)
     await new Promise((resolve) => setTimeout(resolve, 400))
-    return { demo: true, wervernr, stats: demoSalesStats(request.from, request.to, wervernr) }
+    const stats = statsFor(demoSalesStats(request.from, request.to, wervernr), DEMO_MODE === "admin")
+    return { demo: true, wervernr, stats }
   }
   return invoke<KpiResponse>("kpi", { ...request })
 }
@@ -175,12 +179,16 @@ export async function getSalesOpportunities(request: SalesOpportunitiesRequest):
       return { demo: true, action: "streets", view: shared.opportunityStreetsView(streets, detailed) }
     }
     if (request.action === "pc5") {
-      return { demo: true, action: "pc5", view: shared.opportunityPc5View({ areaThresholds: [], areas: [] }, detailed) }
+      return {
+        demo: true,
+        action: "pc5",
+        view: shared.opportunityPc5View(demo.demoOpportunityPc5(request.woz), detailed),
+      }
     }
     return {
       demo: true,
       action: "pc6",
-      view: shared.opportunityPc6View({ streetThresholds: [], streets: [] }, detailed),
+      view: shared.opportunityPc6View(demo.demoOpportunityPc6(request.woz), detailed),
     }
   }
   return invoke<SalesOpportunitiesResponse>("sales-opportunities", { ...request })
@@ -625,15 +633,102 @@ export async function deleteTickedDoors(ids: string[]): Promise<void> {
   }
 }
 
+// --- Monteur homes -------------------------------------------------------------------------------
+
+/** Admins only (row-level security): where the monteurs live. */
+export async function listMonteurHomes(): Promise<MonteurHome[]> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoMonteurHomes } = await import("@/features/monteurs/demo-monteurs")
+    return demoMonteurHomes()
+  }
+  const { data, error } = await supabase
+    .from("monteur_homes")
+    .select("id, name, postcode, huisnummer, toevoeging, straat, plaats, lon, lat")
+    .order("name")
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De monteurs konden niet worden geladen", 500)
+  }
+  return data
+}
+
+/** Admins only (row-level security): looks the address up in the BAG for its location, and stores it. */
+export async function addMonteurHome(input: NewMonteurHome): Promise<void> {
+  const postcode = normalizePostcode(input.postcode)
+  const huisnummer = input.huisnummer.trim()
+  if (!POSTCODE_REGEX.test(postcode)) throw new ApiError("Vul een postcode in zoals 1234 AB", 400)
+  if (!/^\d{1,6}$/.test(huisnummer)) throw new ApiError("Vul het huisnummer in, zonder toevoeging", 400)
+
+  const doors = await pdokAll<AddressDoc>(
+    ["type:adres", `postcode:${postcode}`, `huisnummer:${huisnummer}`],
+    ADDRESS_FIELDS,
+    1,
+  )
+  const door = homeDoor(doors.map(doorOf), input.toevoeging)
+  if (!door?.at) throw new ApiError("Dit adres staat niet in de adressenlijst", 404)
+
+  const home = {
+    name: input.name.trim(),
+    postcode,
+    huisnummer,
+    toevoeging: input.toevoeging.trim(),
+    straat: door.straat,
+    plaats: door.plaats,
+    lon: door.at[0],
+    lat: door.at[1],
+  }
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoAddMonteurHome } = await import("@/features/monteurs/demo-monteurs")
+    return demoAddMonteurHome(home)
+  }
+  const { error } = await supabase.from("monteur_homes").insert(home)
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De monteur kon niet worden opgeslagen", 500)
+  }
+}
+
+/** Admins only (row-level security). */
+export async function deleteMonteurHome(id: string): Promise<void> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoDeleteMonteurHome } = await import("@/features/monteurs/demo-monteurs")
+    return demoDeleteMonteurHome(id)
+  }
+  const { error } = await supabase.from("monteur_homes").delete().eq("id", id)
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De monteur kon niet worden verwijderd", 500)
+  }
+}
+
 // --- Admin ---------------------------------------------------------------------------------------
 
-export type AdminProfileInput = { wervernaam: string; wervernr: string; isAdmin: boolean; scanContactFields: boolean }
+export type AdminProfileInput = {
+  wervernaam: string
+  wervernr: string
+  isAdmin: boolean
+  scanContactFields: boolean
+  groupId: string | null
+}
+
+export type AdminGroupInput = { name: string; memberIds: string[]; managerIds: string[] }
+
+/** A call to the admin-users function; in the demo, to a stand-in that keeps everything in memory. */
+async function adminCall<T = unknown>(body: Record<string, unknown>): Promise<T> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoAdminCall } = await import("@/features/admin/demo-admin")
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    return demoAdminCall(body) as T
+  }
+  return invoke<T>("admin-users", body)
+}
 
 export const adminApi = {
-  list: () => invoke<{ users: AdminUser[] }>("admin-users", { action: "list" }).then((result) => result.users),
-  invite: (email: string, profile: AdminProfileInput) => invoke("admin-users", { action: "invite", email, ...profile }),
-  update: (id: string, profile: AdminProfileInput) => invoke("admin-users", { action: "update", id, ...profile }),
-  resendInvite: (id: string) =>
-    invoke("admin-users", { action: "resendInvite", id, redirectTo: window.location.origin }),
-  setDisabled: (id: string, disabled: boolean) => invoke("admin-users", { action: "setDisabled", id, disabled }),
+  list: () => adminCall<{ users: AdminUser[]; groups: AdminGroup[] }>({ action: "list" }),
+  invite: (email: string, profile: AdminProfileInput) => adminCall({ action: "invite", email, ...profile }),
+  update: (id: string, profile: AdminProfileInput) => adminCall({ action: "update", id, ...profile }),
+  resendInvite: (id: string) => adminCall({ action: "resendInvite", id, redirectTo: window.location.origin }),
+  setDisabled: (id: string, disabled: boolean) => adminCall({ action: "setDisabled", id, disabled }),
+  saveGroup: (id: string | undefined, group: AdminGroupInput) => adminCall({ action: "saveGroup", id, ...group }),
+  deleteGroup: (id: string) => adminCall({ action: "deleteGroup", id }),
 }

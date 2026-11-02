@@ -1,22 +1,24 @@
 import { ChevronRightIcon } from "lucide-react"
 import type { SalesStats } from "@shared/kpi"
-import { cancelRate, formatRate, type Period } from "./periods"
+import { formatRate, uitvalRate, type Period } from "./periods"
 
 type Props = {
   stats: SalesStats
   period: Period
+  showBank: boolean
   onPick: (wervernr: string) => void
 }
 
 /** Sales manager: every recruiter's numbers for the selected period, most sales first. Tap to open one. */
-export function TeamTable({ stats, period, onPick }: Props) {
+export function TeamTable({ stats, period, showBank, onPick }: Props) {
   const names = new Map(stats.recruiters.map((r) => [r.number, r.name]))
-  const totals = new Map<string, { sold: number; cancelled: number }>()
+  const totals = new Map<string, { sold: number; cancelled: number; bank: number }>()
   for (const day of stats.days) {
     if (day.date < period.start || day.date > period.end) continue
-    const total = totals.get(day.recruiter) ?? { sold: 0, cancelled: 0 }
+    const total = totals.get(day.recruiter) ?? { sold: 0, cancelled: 0, bank: 0 }
     total.sold += day.sold
     total.cancelled += day.cancelled
+    total.bank += day.bankAfval ?? 0
     totals.set(day.recruiter, total)
   }
   const rows = [...totals]
@@ -32,7 +34,8 @@ export function TeamTable({ stats, period, onPick }: Props) {
           <th className="pb-2 text-left font-normal">Werver</th>
           <th className="pb-2 text-right font-normal">Bruto</th>
           <th className="pb-2 text-right font-normal">Opgezegd</th>
-          <th className="pb-2 text-right font-normal">Uitval</th>
+          {showBank && <th className="pb-2 pl-2 text-right font-normal">Bank</th>}
+          <th className="pb-2 pl-2 text-right font-normal">Uitval</th>
           <th className="w-6" />
         </tr>
       </thead>
@@ -48,7 +51,8 @@ export function TeamTable({ stats, period, onPick }: Props) {
             </td>
             <td className="py-3 text-right tabular-nums">{row.sold}</td>
             <td className="py-3 text-right tabular-nums">{row.cancelled}</td>
-            <td className="py-3 text-right tabular-nums">{formatRate(cancelRate(row))}</td>
+            {showBank && <td className="py-3 text-right tabular-nums">{row.bank}</td>}
+            <td className="py-3 text-right tabular-nums">{formatRate(uitvalRate(row))}</td>
             <td className="py-3 text-right text-muted-foreground">
               <ChevronRightIcon className="ml-auto size-4" />
             </td>

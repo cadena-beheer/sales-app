@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react"
+import { Fragment, useEffect, useLayoutEffect, useRef } from "react"
 import { ChevronLeftIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -21,8 +21,8 @@ const PLOT_HEIGHT = 140
 const HEADROOM = 16
 
 /**
- * Stacked columns per week or month: netto (sales that stayed) at the bottom, opgezegd on top, so the whole column
- * is the bruto number. Newest on the right; scroll left to go back in time. Tapping a column selects that period.
+ * Stacked columns per week or month: netto (sales that stayed and paid) at the bottom, then bankafval, opgezegd on
+ * top, so the whole column is the bruto number. Newest on the right; scroll left to go back in time. Tapping a column selects that period.
  */
 export function PeriodChart(props: Props) {
   const { periods, granularity, selectedKey, onSelect, isProvisional, canLoadMore, loadingMore, onLoadMore } = props
@@ -105,7 +105,13 @@ export function PeriodChart(props: Props) {
 
           {periods.map((period) => {
             const selected = period.key === selectedKey
-            const netto = period.sold - period.cancelled
+            const netto = period.sold - period.cancelled - period.bank
+            const segments = [
+              { count: period.cancelled, color: "bg-opgezegd" },
+              { count: period.bank, color: "bg-bankafval" },
+              { count: netto, color: "bg-netto" },
+            ].filter((segment) => segment.count > 0)
+            const bank = period.bank > 0 ? `, ${period.bank} bankafval` : ""
             const provisional = isProvisional(period)
             return (
               <button
@@ -113,8 +119,8 @@ export function PeriodChart(props: Props) {
                 type="button"
                 onClick={() => onSelect(period.key)}
                 aria-pressed={selected}
-                aria-label={`${longLabel(period, granularity)}: ${period.sold} bruto, ${period.cancelled} opgezegd${provisional ? ", nog niet compleet" : ""}`}
-                title={`${longLabel(period, granularity)}\nBruto ${period.sold} · opgezegd ${period.cancelled} · netto ${netto}`}
+                aria-label={`${longLabel(period, granularity)}: ${period.sold} bruto, ${period.cancelled} opgezegd${bank}${provisional ? ", nog niet compleet" : ""}`}
+                title={`${longLabel(period, granularity)}\nBruto ${period.sold} · opgezegd ${period.cancelled}${period.bank > 0 ? ` · bankafval ${period.bank}` : ""} · netto ${netto}`}
                 className={cn(
                   "group relative flex shrink-0 flex-col items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   provisional && "bg-[repeating-linear-gradient(135deg,transparent_0_5px,var(--color-border)_5px_6px)]",
@@ -128,19 +134,17 @@ export function PeriodChart(props: Props) {
                   {selected && period.sold > 0 && (
                     <span className="mb-0.5 text-[11px] font-semibold text-foreground tabular-nums">{period.sold}</span>
                   )}
-                  {period.cancelled > 0 && (
-                    <div
-                      className="w-5 rounded-t-[4px] bg-opgezegd"
-                      style={{ height: (period.cancelled / max) * PLOT_HEIGHT }}
-                    />
-                  )}
-                  {period.cancelled > 0 && netto > 0 && <div className="h-[2px] w-5 shrink-0" />}
-                  {netto > 0 && (
-                    <div
-                      className={cn("w-5 bg-netto", period.cancelled === 0 && "rounded-t-[4px]")}
-                      style={{ height: Math.max(1, (netto / max) * PLOT_HEIGHT - (period.cancelled > 0 ? 2 : 0)) }}
-                    />
-                  )}
+                  {segments.map((segment, index) => (
+                    <Fragment key={segment.color}>
+                      {index > 0 && <div className="h-[2px] w-5 shrink-0" />}
+                      <div
+                        className={cn("w-5", segment.color, index === 0 && "rounded-t-[4px]")}
+                        style={{
+                          height: Math.max(1, (segment.count / max) * PLOT_HEIGHT - (index > 0 ? 2 : 0)),
+                        }}
+                      />
+                    </Fragment>
+                  ))}
                 </div>
                 <span
                   className={cn(

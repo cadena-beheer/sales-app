@@ -28,11 +28,12 @@ import { supabase } from "@/lib/supabase"
 // Loaded on first use: MapLibre is large and the sales form should not wait for it.
 const SalesMapPage = lazy(() => import("@/features/sales-map/map-page").then((m) => ({ default: m.SalesMapPage })))
 
-/** Dev only: `?demo&verkopen`, `?demo&kaart`, `?demo&werkgebieden` or `?demo=werver&gebieden` opens that page. */
+/** Dev only: `?demo&verkopen`, `?demo&kaart`, `?demo&beheer`, `?demo&werkgebieden` or `?demo=werver&gebieden` opens that page. */
 function demoView(): View {
   const params = new URLSearchParams(window.location.search)
   if (params.has("verkopen")) return "sales"
   if (params.has("kaart")) return "map"
+  if (params.has("beheer")) return "admin"
   if (params.has("werkgebieden")) return "planning"
   if (params.has("gebieden")) return "areas"
   return "dashboard"
@@ -160,6 +161,7 @@ export default function App() {
       const areaView = areaViews(demoProfile)
       if (areaView) return areaView
       if (view === "sales") return <SalesListPage profile={demoProfile} userId={undefined} onBack={() => back(FORM)} />
+      if (view === "admin") return <AdminPage currentUserId="demo-jan" onBack={() => back(FORM)} />
       return <DashboardPage profile={demoProfile} onBack={() => back(FORM)} />
     }
     if (loading) return pageSpinner

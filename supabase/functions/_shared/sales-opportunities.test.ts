@@ -14,8 +14,8 @@ import {
 
 const areas: OpportunityAreas = {
   statistics: "CBS kerncijfers per postcode 2025 (v1)",
-  lowBelow: 285,
-  highFrom: 450,
+  indexLowBelow: 92,
+  indexHighFrom: 108,
   customersCountedAt: "2026-10-28T06:00:00",
   streetThresholds: [10, 20, 40, 80],
   areas: [
@@ -30,8 +30,24 @@ const areas: OpportunityAreas = {
 const streets: OpportunityStreets = {
   postcode: "3811",
   streets: [
-    { postcode: "3811AA", streets: "Kerkstraat", city: "Amersfoort", households: 40, customers: 2, open: 38, woz: 240 },
-    { postcode: "3811AB", streets: "Molenweg", city: "Amersfoort", households: 20, customers: 0, open: 20, woz: 260 },
+    {
+      postcode: "3811AA",
+      streets: "Kerkstraat",
+      city: "Amersfoort",
+      households: 40,
+      customers: 2,
+      open: 38,
+      wozIndex: 88,
+    },
+    {
+      postcode: "3811AB",
+      streets: "Molenweg",
+      city: "Amersfoort",
+      households: 20,
+      customers: 0,
+      open: 20,
+      wozIndex: 95,
+    },
   ],
 }
 
@@ -43,7 +59,7 @@ describe("opportunitiesView for an admin", () => {
       { postcode: "3811", level: 1, households: 4000, customers: 40, open: 3960, bestStreetOpen: 15, share: 0.01 },
       { postcode: "3813", level: 2, households: 300, customers: 3, open: 297, bestStreetOpen: 90, share: 0.01 },
     ])
-    expect(view).toMatchObject({ detailed: true, lowBelow: 285, highFrom: 450 })
+    expect(view).toMatchObject({ detailed: true, indexLowBelow: 92, indexHighFrom: 108 })
   })
 })
 
@@ -76,7 +92,7 @@ describe("opportunityStreetsView", () => {
 describe("opportunityPc6View", () => {
   const pc6: OpportunityPc6 = {
     streetThresholds: [10, 20, 40, 80],
-    streets: [{ postcode: "3811AA", households: 100, customers: 10, open: 90, woz: 250 }],
+    streets: [{ postcode: "3811AA", households: 100, customers: 10, open: 90, wozIndex: 104 }],
   }
 
   it("shades each street on the national street scale", () => {
@@ -86,7 +102,7 @@ describe("opportunityPc6View", () => {
       households: 100,
       customers: 10,
       open: 90,
-      woz: 250,
+      wozIndex: 104,
     })
   })
 

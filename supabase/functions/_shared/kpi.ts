@@ -23,9 +23,19 @@ export const salesStatsSchema = z.object({
   /** When the most recent cancellation was entered: cancellations of later sales are certainly still missing. */
   cancellationsEnteredUntil: z.string().nullable(),
   salesEnteredUntil: z.string().nullable(),
-  /** Per sale day and recruiter; a cancellation counts on the day of the sale. */
+  /**
+   * Per sale day and recruiter; a cancellation counts on the day of the sale. `bankAfval`: sales of that day that were
+   * not cancelled but never paid, so never also in `cancelled`. Optional until the endpoint sends it; the app shows no
+   * bankafval without it.
+   */
   days: z.array(
-    z.object({ date: isoDate, recruiter: z.string(), sold: z.number().int(), cancelled: z.number().int() }),
+    z.object({
+      date: isoDate,
+      recruiter: z.string(),
+      sold: z.number().int(),
+      cancelled: z.number().int(),
+      bankAfval: z.number().int().optional(),
+    }),
   ),
   recruiters: z.array(z.object({ number: z.string(), name: z.string() })),
   /** One recruiter only (empty for the team), newest cancellation first. */
@@ -45,12 +55,48 @@ export const salesStatsSchema = z.object({
    * the endpoint sends it (ZMSuite change request); without it the team view shows totals for the loaded range.
    */
   reasons: z.array(z.object({ date: isoDate.optional(), reason: z.string(), count: z.number().int() })),
+  /** One recruiter only (empty for the team), newest first: the customers behind `bankAfval`. */
+  bankAfval: z
+    .array(
+      z.object({
+        regNr: z.string(),
+        name: z.string(),
+        city: z.string(),
+        soldOn: isoDate,
+        /** When the last debit came back; for an acceptgiro, when the customer was removed. */
+        returnedOn: z.string().nullable(),
+        /** The bank's reason, e.g. "Onvoldoende saldo". */
+        reason: z.string(),
+      }),
+    )
+    .default([]),
+  /**
+   * How many days after the sale it fell away, per sale day: how many sales, for each number of days. Admins only:
+   * statsFor removes it for anyone else.
+   */
+  afvalDelays: z
+    .array(
+      z.object({
+        date: isoDate,
+        kind: z.enum(["opgezegd", "bank"]),
+        days: z.number().int(),
+        count: z.number().int(),
+      }),
+    )
+    .default([]),
 })
 
 export type SalesStats = z.infer<typeof salesStatsSchema>
 export type SalesStatsDay = SalesStats["days"][number]
 export type SalesStatsCancellation = SalesStats["cancellations"][number]
 export type SalesStatsReason = SalesStats["reasons"][number]
+export type SalesStatsBankAfval = SalesStats["bankAfval"][number]
+export type SalesStatsDelay = SalesStats["afvalDelays"][number]
+
+/** What the caller may see: after how many days sales fall away is for admins, so a recruiter's phone never gets it. */
+export function statsFor(stats: SalesStats, isAdmin: boolean): SalesStats {
+  return isAdmin ? stats : { ...stats, afvalDelays: [] }
+}
 
 export type KpiResponse = {
   /** True when the Contracts API is not configured and the numbers are made up. */
