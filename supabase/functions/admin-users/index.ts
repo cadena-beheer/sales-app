@@ -1,9 +1,10 @@
 import type { User } from "@supabase/supabase-js"
 import { z } from "zod"
-import { TEMPORARY_PASSWORD, type AdminUser } from "../_shared/admin-types.ts"
+import type { AdminUser } from "../_shared/admin-types.ts"
 import { requireUser } from "../_shared/auth.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
 import { createAdminClient } from "../_shared/supabase.ts"
+import { generateTemporaryPassword } from "../_shared/temporary-password.ts"
 
 const profileFields = {
   wervernaam: z.string().trim().min(1, "Vul de wervernaam in").max(100),
@@ -44,10 +45,12 @@ serve(async (req) => {
       return json({ users: await listUsers() })
 
     case "invite": {
-      // No email: the account is active at once with the temporary password, which the admin passes on.
+      // No email: the account is active at once with a temporary password, which the admin passes on.
+      // This response is the only place it is ever available; it is not stored anywhere readable.
+      const password = generateTemporaryPassword()
       const { data, error } = await admin.auth.admin.createUser({
         email: body.email,
-        password: TEMPORARY_PASSWORD,
+        password,
         email_confirm: true,
         user_metadata: { wervernaam: body.wervernaam, wervernr: body.wervernr },
       })
@@ -55,7 +58,7 @@ serve(async (req) => {
       if (error) throw new HttpError(400, error.message)
       // The on_auth_user_created trigger created the profile from the metadata; only the flags are left.
       if (body.isAdmin || body.scanContactFields) await updateProfile(caller.id, data.user.id, body)
-      return json({ ok: true })
+      return json({ ok: true, password })
     }
 
     case "update": {

@@ -124,8 +124,10 @@ made-up numbers and the page says so. In development, open `http://localhost:517
 `?demo=werver` to see the dashboard with demo data without logging in.
 
 **Login.** Sign-ups are disabled. An admin adds a recruiter on the admin page ("Werver toevoegen"): the account is
-active at once with the password `tijdelijkwachtwoord` (`TEMPORARY_PASSWORD` in `_shared/admin-types.ts`), which
-the recruiter changes from the account menu; no email is sent. Accounts invited by email before that still work. An invite or password-reset email opens the app on
+active at once with a random password (`_shared/temporary-password.ts`). The admin sees it once, right after adding
+the recruiter, and passes it on; the recruiter changes it from the account menu. No email is sent. Lost it? The
+"forgot password" link on the login page still works. Accounts added earlier keep the password they have, and
+accounts invited by email before that still work. An invite or password-reset email opens the app on
 the set-password screen. If the server rejects a session (e.g. revoked), the app refreshes it once and
 otherwise signs out on that device only.
 

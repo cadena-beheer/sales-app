@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react"
+import { CopyIcon } from "lucide-react"
 import { toast } from "sonner"
-import { TEMPORARY_PASSWORD, type AdminUser } from "@shared/admin-types"
+import type { AdminUser } from "@shared/admin-types"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,8 +39,13 @@ export function UserDialog({ user, isSelf, onClose }: Props) {
     isAdmin: user?.isAdmin ?? false,
     scanContactFields: user?.scanContactFields ?? false,
   })
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null)
   const save = useAdminAction(
-    () => (user ? adminApi.update(user.id, profile) : adminApi.invite(email.trim(), profile)),
+    async () => {
+      if (user) return adminApi.update(user.id, profile)
+      const { password } = await adminApi.invite(email.trim(), profile)
+      setCreated({ email: email.trim(), password })
+    },
     { toastErrors: false },
   )
 
@@ -47,13 +53,14 @@ export function UserDialog({ user, isSelf, onClose }: Props) {
     event.preventDefault()
     save.mutate(undefined, {
       onSuccess: () => {
-        toast.success(
-          user ? "Wijzigingen opgeslagen" : `${email.trim()} kan nu inloggen met wachtwoord ${TEMPORARY_PASSWORD}`,
-        )
+        if (!user) return
+        toast.success("Wijzigingen opgeslagen")
         onClose()
       },
     })
   }
+
+  if (created) return <CreatedDialog {...created} onClose={onClose} />
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -64,7 +71,7 @@ export function UserDialog({ user, isSelf, onClose }: Props) {
             <DialogDescription>
               {user
                 ? user.email
-                : `De werver kan meteen inloggen met wachtwoord ${TEMPORARY_PASSWORD} en wijzigt het daarna via het accountmenu. Er gaat geen e-mail uit.`}
+                : "De werver krijgt een eigen wachtwoord, dat je hierna te zien krijgt en zelf doorstuurt. Er gaat geen e-mail uit."}
             </DialogDescription>
           </DialogHeader>
 
@@ -140,6 +147,68 @@ export function UserDialog({ user, isSelf, onClose }: Props) {
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Shows the new recruiter's password, the only time it can be seen. It closes only through its button, so a stray
+ * click next to the dialog cannot lose the password.
+ */
+function CreatedDialog({ email, password, onClose }: { email: string; password: string; onClose: () => void }) {
+  const message = [
+    "Je account voor Z&M Sales staat klaar.",
+    "",
+    `Inloggen: ${window.location.origin}`,
+    `E-mail: ${email}`,
+    `Wachtwoord: ${password}`,
+    "",
+    "Wijzig je wachtwoord na het inloggen via het accountmenu.",
+  ].join("\n")
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(message)
+      toast.success("Bericht gekopieerd")
+    } catch {
+      toast.error("Kopiëren lukte niet, selecteer het wachtwoord zelf")
+    }
+  }
+
+  return (
+    <Dialog open>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Werver toegevoegd</DialogTitle>
+          <DialogDescription>
+            {email} kan nu inloggen. Stuur het wachtwoord door: je ziet het hierna niet meer.
+          </DialogDescription>
+        </DialogHeader>
+
+        <FieldGroup className="py-4">
+          <Field>
+            <FieldLabel htmlFor="temporary-password">Wachtwoord</FieldLabel>
+            <Input
+              id="temporary-password"
+              readOnly
+              className="font-mono"
+              value={password}
+              onFocus={(event) => event.target.select()}
+            />
+            <FieldDescription>De werver wijzigt het na het inloggen via het accountmenu.</FieldDescription>
+          </Field>
+        </FieldGroup>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={copyMessage}>
+            <CopyIcon />
+            Kopieer bericht
+          </Button>
+          <Button type="button" onClick={onClose}>
+            Klaar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
