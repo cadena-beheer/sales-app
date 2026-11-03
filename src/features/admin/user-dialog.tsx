@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
-import { TEMPORARY_PASSWORD, type AdminUser } from "@shared/admin-types"
+import { TEMPORARY_PASSWORD, type AdminGroup, type AdminUser } from "@shared/admin-types"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,6 +22,7 @@ import { useAdminAction } from "./use-admin-users"
 type Props = {
   /** The recruiter to edit, or null to add a new one. */
   user: AdminUser | null
+  groups: AdminGroup[]
   isSelf: boolean
   onClose: () => void
 }
@@ -30,13 +31,14 @@ type Props = {
  * Add or edit a recruiter. Mounted only while open (and keyed by user), so its state starts fresh
  * every time it opens.
  */
-export function UserDialog({ user, isSelf, onClose }: Props) {
+export function UserDialog({ user, groups, isSelf, onClose }: Props) {
   const [email, setEmail] = useState("")
   const [profile, setProfile] = useState<AdminProfileInput>({
     wervernaam: user?.wervernaam ?? "",
     wervernr: user?.wervernr ?? "",
     isAdmin: user?.isAdmin ?? false,
     scanContactFields: user?.scanContactFields ?? false,
+    groupId: user?.groupId ?? null,
   })
   const save = useAdminAction(
     () => (user ? adminApi.update(user.id, profile) : adminApi.invite(email.trim(), profile)),
@@ -104,6 +106,23 @@ export function UserDialog({ user, isSelf, onClose }: Props) {
                 value={profile.wervernr}
                 onChange={(event) => setProfile({ ...profile, wervernr: event.target.value })}
               />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="group">Groep</FieldLabel>
+              {/* Native select for the phone's own picker. */}
+              <select
+                id="group"
+                className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+                value={profile.groupId ?? ""}
+                onChange={(event) => setProfile({ ...profile, groupId: event.target.value || null })}
+              >
+                <option value="">Geen groep</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field orientation="horizontal">
               <FieldContent>

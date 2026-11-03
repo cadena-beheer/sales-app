@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import * as maplibregl from "maplibre-gl"
 import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl"
-import { ArrowLeftIcon, ZoomInIcon } from "lucide-react"
+import { ArrowLeftIcon, MapPinIcon, PencilIcon, ZoomInIcon } from "lucide-react"
 import { toast } from "sonner"
 import { AppMenu } from "@/components/app-menu"
 import { HEADER_BUTTON_CLASS, PageHeader } from "@/components/page-header"
@@ -45,6 +45,9 @@ import {
 } from "../areas/map-overlay"
 import { useAreaAssignments, useCreateAreaAssignment, useRecruiters } from "../areas/use-areas"
 import { addDays, formatDay, today } from "../dashboard/periods"
+import { homeAddress, type MonteurHome } from "../monteurs/monteur-homes"
+import { MonteursDialog } from "../monteurs/monteurs-dialog"
+import { useMonteurHomes } from "../monteurs/use-monteurs"
 import { BACKGROUND_SOURCE, postcodeSource } from "./map-setup"
 import { AGE_STOPS, fillColor, fillOpacity, KANSEN_COLORS, STREET_OPACITY } from "./scale"
 
@@ -68,6 +71,9 @@ const PERIODS = [
   { days: 90, label: "90 dagen" },
   { days: 365, label: "1 jaar" },
 ] as const
+
+/** The colour of a monteur's pin: clear of the blue shades and the red and green of areas given out. */
+const MONTEUR_PIN = "#d97706"
 
 /** From this zoom the PC5 areas in view are drawn over the PC4 areas. */
 const PC5_ZOOM = 11
@@ -116,7 +122,7 @@ function withDetail(seen: Seen, detail: DetailView<Detail> | undefined): Seen {
 /**
  * Two views of the areas, everything computed by the backend. "Verkopen": where the team sold, red where the newest
  * sale is days old fading to grey, darker where more was sold. "Kansen": where households in streets of a WOZ band
- * are still not a customer, pale to deep blue. A PC4 is shaded like its best street, a PC5 too; zoomed in, the
+ * (the street's WOZ value against its gemeente's average) are still not a customer, pale to deep blue. A PC4 is shaded like its best street, a PC5 too; zoomed in, the
  * streets in view are drawn by themselves on the national street scale. The outlines are vector tiles; the backend
  * only says what each postcode is coloured by. Only admins also get the numbers, which the backend leaves out for
  * recruiters.
@@ -196,6 +202,12 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
     enabled: assigning && bbox !== null,
     gcTime: VIEW_CACHE_MS,
   })
+
+  // Where the monteurs live: for admins, on the views for planning where to go.
+  const monteurs = useMonteurHomes(isAdmin && shading === "kansen")
+  const [showMonteurs, setShowMonteurs] = useState(true)
+  const [editingMonteurs, setEditingMonteurs] = useState(false)
+  const pins = isAdmin && shading === "kansen" && showMonteurs ? monteurs.data : undefined
 
   const query = mode === "sales" ? sales : kansen
   const salesMap = sales.data?.map
@@ -410,8 +422,31 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
           </>
         ) : (
           <>
-            <Choice label="WOZ-waarde" options={wozOptions(opportunities)} value={woz} onChange={setWoz} />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">WOZ t.o.v. gemeente</span>
+              <Choice label="WOZ t.o.v. gemeente" options={wozOptions(opportunities)} value={woz} onChange={setWoz} />
+            </div>
             <KansenLegend />
+            {isAdmin && (
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant={showMonteurs ? "default" : "outline"}
+                  aria-pressed={showMonteurs}
+                  onClick={() => setShowMonteurs(!showMonteurs)}
+                >
+                  <MapPinIcon /> Monteurs{monteurs.data ? ` (${monteurs.data.length})` : ""}
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Monteurs beheren"
+                  onClick={() => setEditingMonteurs(true)}
+                >
+                  <PencilIcon />
+                </Button>
+              </div>
+            )}
           </>
         )}
         {query.data?.demo && <Badge variant="secondary">Voorbeeldcijfers</Badge>}
@@ -433,6 +468,7 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
           faint={faint}
           popup={popup}
           overlay={overlay}
+          pins={pins}
           fitTo={focus?.bounds ?? null}
           onView={setView}
           onDrawing={setDrawing}
@@ -474,8 +510,9 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
       {mode === "kansen" && opportunities && (
         <p className="border-t bg-background px-4 py-1.5 text-xs text-muted-foreground">
           {opportunities.detailed && `${totalOpen(opportunities)} huishoudens nog geen klant op de kaart. `}
-          Huishoudens en WOZ per straat: {opportunities.statistics}. Een gebied is zo donker als zijn beste straat; zoom
-          in voor de straten.
+          Huishoudens en WOZ per straat: {opportunities.statistics}. WOZ t.o.v. gemeente: de gemiddelde WOZ van de
+          straat gedeeld door die van de hele gemeente (100% = gemiddeld). Een gebied is zo donker als zijn beste
+          straat; zoom in voor de straten.
         </p>
       )}
       {assigning && (
@@ -495,6 +532,7 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
           onAssign={() => void assignPicked()}
         />
       )}
+      {editingMonteurs && <MonteursDialog homes={monteurs.data ?? []} onClose={() => setEditingMonteurs(false)} />}
     </div>
   )
 }
@@ -558,6 +596,8 @@ type MapProps = {
   popup: { current: PopupFor }
   /** Areas picked or given out, drawn over the shades. */
   overlay: Overlay
+  /** The monteurs' homes to pin, if any. */
+  pins: MonteurHome[] | undefined
   /** Where the map opens instead of the whole country. */
   fitTo: Bounds | null
   /** Called a moment after the map stops moving. */
@@ -578,7 +618,20 @@ const LEVELS: Level[] = ["pc4", "pc5", "pc6"]
  * The MapLibre map. All three levels are vector tiles (map-setup's TILES_URL), coloured by feature state, so new numbers
  * never reload an outline. MapLibre keeps only the tiles near the view in memory.
  */
-function SalesMap({ mode, shades, seen, shown, outlined, faint, popup, overlay, fitTo, onView, onDrawing }: MapProps) {
+function SalesMap({
+  mode,
+  shades,
+  seen,
+  shown,
+  outlined,
+  faint,
+  popup,
+  overlay,
+  pins,
+  fitTo,
+  onView,
+  onDrawing,
+}: MapProps) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const viewChanged = useRef(onView)
@@ -740,6 +793,8 @@ function SalesMap({ mode, shades, seen, shown, outlined, faint, popup, overlay, 
     })
 
     map.on("click", (event) => {
+      // A tap on a pin opens the pin's own popup; it neither explains nor picks the area under it.
+      if ((event.originalEvent.target as Element).closest(".maplibregl-marker")) return void info.remove()
       const level = shownRef.current
       const pick = popup.current.pick
       if (pick) {
@@ -815,6 +870,19 @@ function SalesMap({ mode, shades, seen, shown, outlined, faint, popup, overlay, 
     const map = mapRef.current
     if (map && loaded) applyOverlay(map, LEVELS, overlay)
   }, [overlay, loaded])
+
+  // The pins are DOM elements on top of everything; there are few enough of them for that.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded || !pins) return
+    const markers = pins.map((home) =>
+      new maplibregl.Marker({ color: MONTEUR_PIN, scale: 0.8 })
+        .setLngLat([home.lon, home.lat])
+        .setPopup(new maplibregl.Popup({ offset: 24, maxWidth: "280px" }).setDOMContent(monteurPopup(home)))
+        .addTo(map),
+    )
+    return () => markers.forEach((marker) => marker.remove())
+  }, [pins, loaded])
 
   // Opening on an area: once, when the map is ready.
   useEffect(() => {
@@ -986,7 +1054,7 @@ function kansenPopup(postcode: string, area: OpportunityArea | undefined, woz: W
       const list = add("ol", "", "list-decimal pl-5")
       for (const s of response.view.streets) {
         const where = `${s.streets || "Onbekende straat"} (${pc6Label(s.postcode)})`
-        const numbers = s.open !== undefined ? ` · ${s.open} open${s.woz ? ` · WOZ €${s.woz}k` : ""}` : ""
+        const numbers = s.open !== undefined ? ` · ${s.open} open${s.wozIndex ? ` · WOZ ${s.wozIndex}%` : ""}` : ""
         add("li", where + numbers, "", list)
       }
     })
@@ -1015,8 +1083,15 @@ function kansenStreetPopup(street: OpportunityDetail): HTMLElement {
   add("div", RANKS[street.level])
   if (street.open !== undefined && street.households !== undefined) {
     add("div", `${street.open} van ${street.households} huishoudens nog geen klant`)
-    if (street.woz) add("div", `Gemiddelde WOZ €${street.woz}k`, "text-muted-foreground")
+    if (street.wozIndex) add("div", `WOZ ${street.wozIndex}% van het gemeentegemiddelde`, "text-muted-foreground")
   }
+  return root
+}
+
+function monteurPopup(home: MonteurHome): HTMLElement {
+  const [root, add] = popupRoot()
+  add("div", home.name, "font-semibold")
+  add("div", homeAddress(home), "text-muted-foreground")
   return root
 }
 
@@ -1027,12 +1102,12 @@ function totalOpen(view: OpportunitiesView): string {
 const nl = (n: number) => n.toLocaleString("nl-NL")
 const percent = (share: number) => `${(share * 100).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}%`
 
-/** The bands with their limits once the backend has sent them, e.g. "Laag (< €285k)". */
+/** The bands with their limits once the backend has sent them, e.g. "Laag (< 92%)". */
 function wozOptions(view: OpportunitiesView | undefined): { value: WozBand; label: string }[] {
   return [
-    { value: "low", label: view ? `Laag (< €${view.lowBelow}k)` : "Laag" },
+    { value: "low", label: view ? `Laag (< ${view.indexLowBelow}%)` : "Laag" },
     { value: "mid", label: "Midden" },
-    { value: "high", label: view ? `Hoog (≥ €${view.highFrom}k)` : "Hoog" },
+    { value: "high", label: view ? `Hoog (≥ ${view.indexHighFrom}%)` : "Hoog" },
     { value: "all", label: "Alles" },
   ]
 }

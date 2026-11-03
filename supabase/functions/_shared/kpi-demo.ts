@@ -1,7 +1,7 @@
 // Made-up sales statistics in the shape of the Contracts API, used until the stats endpoint is configured (and by
 // the app's dev-only demo mode). Deterministic: the same day and recruiter always give the same numbers, so pages
 // loaded separately fit together. No Deno APIs here.
-import type { SalesStats, SalesStatsCancellation } from "./kpi.ts"
+import type { SalesStats, SalesStatsBankAfval, SalesStatsCancellation } from "./kpi.ts"
 
 const DEMO_RECRUITERS = [
   { number: "0212BB", name: "Jan van Dorth", level: 3.2 },
@@ -25,6 +25,8 @@ const REASONS: [reason: string, weight: number, details: string[]][] = [
   ["Anders", 3, ["al lid", "afstand", "wegens omstandigheden"]],
   ["Overleden", 2, [""]],
 ]
+
+const BANK_REASONS = ["Onvoldoende saldo", "Storno door klant", "Rekening opgeheven"]
 
 const INITIALS = [
   "A.",
@@ -94,6 +96,12 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
   const days: SalesStats["days"] = []
   const cancellations: SalesStatsCancellation[] = []
   const reasonCounts = new Map<string, number>()
+  const bankAfval: SalesStatsBankAfval[] = []
+  const delays = new Map<string, number>()
+  const delayed = (date: string, kind: string, days: number) => {
+    const key = `${date}|${kind}|${days}`
+    delays.set(key, (delays.get(key) ?? 0) + 1)
+  }
 
   for (let day = parseIso(from); toIso(day) <= to && toIso(day) <= today; day.setUTCDate(day.getUTCDate() + 1)) {
     const date = toIso(day)
@@ -108,8 +116,31 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
       if (sold === 0) continue
 
       let cancelled = 0
+      let bank = 0
+      // The customers' details from a generator of their own, so a recruiter's numbers are the same in the team view.
+      const details = mulberry32(hash(`${date}|${r.number}|details`))
       for (let i = 0; i < sold; i++) {
-        if (random() > 0.42) continue
+        if (random() > 0.42) {
+          // Stayed, but about one in ten never pays: the first debits, a month or two after the sale, come back.
+          if (random() > 0.1) continue
+          const after = 28 + Math.floor(random() * 50)
+          const returned = new Date(day)
+          returned.setUTCDate(returned.getUTCDate() + after)
+          if (toIso(returned) > enteredDay) continue // Not back from the bank yet.
+          bank++
+          delayed(date, "bank", after)
+          if (recruiter) {
+            bankAfval.push({
+              regNr: `${1 + Math.floor(details() * 9)}${String(Math.floor(details() * 1e6)).padStart(6, "0")}`,
+              name: `${INITIALS[Math.floor(details() * INITIALS.length)]} ${SURNAMES[Math.floor(details() * SURNAMES.length)]}`,
+              city: CITIES[Math.floor(details() * CITIES.length)],
+              soldOn: date,
+              returnedOn: `${toIso(returned)}T06:00:00`,
+              reason: BANK_REASONS[Math.floor(details() * BANK_REASONS.length)],
+            })
+          }
+          continue
+        }
         // Most cancellations arrive within the first weeks; some only around the renewal a year later.
         const delay = random() < 0.9 ? 2 + Math.floor(random() * 28) : 330 + Math.floor(random() * 40)
         const cancelledOn = new Date(day)
@@ -119,27 +150,29 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
         if (toIso(cancelledOn) > enteredDay) continue // Not entered yet.
 
         cancelled++
-        const [reason, , details] = pick(random, REASONS)
+        delayed(date, "opgezegd", Math.round((cancelledOn.getTime() - day.getTime()) / 86_400_000))
+        const [reason, , reasonDetails] = pick(random, REASONS)
         reasonCounts.set(`${date}|${reason}`, (reasonCounts.get(`${date}|${reason}`) ?? 0) + 1)
         if (recruiter) {
-          const hour = 9 + Math.floor(random() * 7)
-          const minute = Math.floor(random() * 60)
+          const hour = 9 + Math.floor(details() * 7)
+          const minute = Math.floor(details() * 60)
           cancellations.push({
-            regNr: `${1 + Math.floor(random() * 9)}${String(Math.floor(random() * 1e6)).padStart(6, "0")}`,
-            name: `${INITIALS[Math.floor(random() * INITIALS.length)]} ${SURNAMES[Math.floor(random() * SURNAMES.length)]}`,
-            city: CITIES[Math.floor(random() * CITIES.length)],
+            regNr: `${1 + Math.floor(details() * 9)}${String(Math.floor(details() * 1e6)).padStart(6, "0")}`,
+            name: `${INITIALS[Math.floor(details() * INITIALS.length)]} ${SURNAMES[Math.floor(details() * SURNAMES.length)]}`,
+            city: CITIES[Math.floor(details() * CITIES.length)],
             soldOn: date,
             cancelledOn: `${toIso(cancelledOn)}T${pad(hour)}:${pad(minute)}:00`,
             reason,
-            detail: details[Math.floor(random() * details.length)],
+            detail: reasonDetails[Math.floor(details() * reasonDetails.length)],
           })
         }
       }
-      days.push({ date, recruiter: r.number, sold, cancelled })
+      days.push({ date, recruiter: r.number, sold, cancelled, bankAfval: bank })
     }
   }
 
   cancellations.sort((a, b) => (b.cancelledOn ?? "").localeCompare(a.cancelledOn ?? ""))
+  bankAfval.sort((a, b) => (b.returnedOn ?? "").localeCompare(a.returnedOn ?? ""))
   return {
     cancellationsEnteredUntil: `${enteredDay}T15:42:00`,
     salesEnteredUntil: `${today}T12:00:00`,
@@ -152,6 +185,11 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
     reasons: [...reasonCounts]
       .map(([key, count]) => ({ date: key.slice(0, 10), reason: key.slice(11), count }))
       .sort((a, b) => a.date.localeCompare(b.date) || b.count - a.count),
+    bankAfval,
+    afvalDelays: [...delays].map(([key, count]) => {
+      const [date, kind, days] = key.split("|")
+      return { date, kind: kind as "opgezegd" | "bank", days: Number(days), count }
+    }),
   }
 }
 

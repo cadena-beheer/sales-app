@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner"
 import type { Profile } from "@/hooks/use-profile"
 import { getErrorMessage } from "@/lib/errors"
 import { cn } from "@/lib/utils"
+import { AfvalDelays } from "./afval-delays"
 import { CancellationList } from "./cancellation-list"
 import { PeriodBar } from "./period-bar"
 import { PeriodChart } from "./period-chart"
@@ -56,6 +57,8 @@ export function DashboardPage({ profile, onBack }: Props) {
   const selectedIndex = selected ? periods.indexOf(selected) : -1
   const enteredUntil = data?.stats.cancellationsEnteredUntil ?? null
   const provisional = selected ? isProvisional(selected, enteredUntil) : false
+  // Bankafval shows once ZMAdmin sends it.
+  const showBank = data?.stats.days.some((day) => day.bankAfval !== undefined) ?? false
   const recruiters = team.data?.stats.recruiters ?? data?.stats.recruiters ?? []
   // "week 41" or "juni 2025" in card titles; the bar at the top has the dates.
   const periodName = selected ? periodTitle(selected, granularity) : ""
@@ -179,7 +182,7 @@ export function DashboardPage({ profile, onBack }: Props) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
-                  <StatTiles period={selected} />
+                  <StatTiles period={selected} showBank={showBank} />
                   <div className="flex gap-2 text-xs text-muted-foreground">
                     <ClockIcon className="size-4 shrink-0" />
                     <p>
@@ -225,6 +228,11 @@ export function DashboardPage({ profile, onBack }: Props) {
                     <li className="flex items-center gap-1.5">
                       <span aria-hidden className="size-2.5 rounded-[3px] bg-opgezegd" /> Opgezegd
                     </li>
+                    {showBank && (
+                      <li className="flex items-center gap-1.5">
+                        <span aria-hidden className="size-2.5 rounded-[3px] bg-bankafval" /> Bankafval
+                      </li>
+                    )}
                     <li className="flex items-center gap-1.5">
                       <span
                         aria-hidden
@@ -239,37 +247,6 @@ export function DashboardPage({ profile, onBack }: Props) {
             <div className="flex min-w-0 flex-col gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>
-                    {wervernr === null ? "Per werver" : "Opzeggingen"} · {periodName}
-                  </CardTitle>
-                  <CardDescription>
-                    {wervernr === null
-                      ? "Tik op een werver voor diens opzeggingen."
-                      : "Opgezegde klanten uit de verkopen van deze periode."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {wervernr === null ? (
-                    <TeamTable
-                      stats={data.stats}
-                      period={selected}
-                      onPick={(number) => {
-                        setPicked(number)
-                        window.scrollTo({ top: 0 })
-                      }}
-                    />
-                  ) : (
-                    <CancellationList
-                      items={data.stats.cancellations.filter(
-                        (c) => c.soldOn >= selected.start && c.soldOn <= selected.end,
-                      )}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
                   <CardTitle>Redenen van opzeggingen · {reasonsPerPeriod ? periodName : "alles geladen"}</CardTitle>
                   {!reasonsPerPeriod && (
                     <CardDescription>
@@ -282,6 +259,55 @@ export function DashboardPage({ profile, onBack }: Props) {
                   <ReasonList reasons={reasons} />
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    {wervernr === null ? "Per werver" : showBank ? "Opzeggingen en bankafval" : "Opzeggingen"} ·{" "}
+                    {periodName}
+                  </CardTitle>
+                  <CardDescription>
+                    {wervernr === null
+                      ? "Tik op een werver voor diens opzeggingen."
+                      : showBank
+                        ? "Opgezegde en niet-betalende klanten uit de verkopen van deze periode."
+                        : "Opgezegde klanten uit de verkopen van deze periode."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {wervernr === null ? (
+                    <TeamTable
+                      stats={data.stats}
+                      period={selected}
+                      showBank={showBank}
+                      onPick={(number) => {
+                        setPicked(number)
+                        window.scrollTo({ top: 0 })
+                      }}
+                    />
+                  ) : (
+                    <CancellationList
+                      items={data.stats.cancellations.filter(
+                        (c) => c.soldOn >= selected.start && c.soldOn <= selected.end,
+                      )}
+                      bank={data.stats.bankAfval.filter((b) => b.soldOn >= selected.start && b.soldOn <= selected.end)}
+                      showDays={isAdmin}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {isAdmin && data.stats.afvalDelays.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Afval na hoeveel dagen · {periodName}</CardTitle>
+                    <CardDescription>Hoe lang na de verkoop de verkopen van deze periode afvielen.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <AfvalDelays delays={data.stats.afvalDelays} period={selected} />
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         )}

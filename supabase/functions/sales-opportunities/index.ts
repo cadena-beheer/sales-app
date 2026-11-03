@@ -4,7 +4,12 @@ import { opportunitiesUrl } from "../_shared/contracts-api.ts"
 import { optionalEnv } from "../_shared/env.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
 import { isTestRequest } from "../_shared/test-request.ts"
-import { demoOpportunityAreas, demoOpportunityStreets } from "../_shared/sales-opportunities-demo.ts"
+import {
+  demoOpportunityAreas,
+  demoOpportunityPc5,
+  demoOpportunityPc6,
+  demoOpportunityStreets,
+} from "../_shared/sales-opportunities-demo.ts"
 import {
   opportunitiesView,
   opportunityAreasSchema,
@@ -22,7 +27,7 @@ import {
 // or (zoomed in) the PC5 areas or the streets in the map's view, as shades for the vector-tile outlines in the app.
 // Everyone sees the shades and the streets; only admins get households, customers and open households. The numbers
 // are left out here, not in the app, so a recruiter's phone never receives them. Without STATS_API_KEY the
-// answers are made up (demo mode; nothing zoomed in then).
+// answers are made up (demo mode).
 
 serve(async (req) => {
   // Only the test deployment shows the map for now; the production app never asks.
@@ -51,12 +56,12 @@ serve(async (req) => {
   } else if (request.action === "pc5") {
     const api = key
       ? await fetchFromApi(opportunitiesUrl("Pc5"), key, request.woz, opportunityPc5Schema, request.bbox)
-      : { areaThresholds: [], areas: [] }
+      : demoOpportunityPc5(request.woz)
     response = { demo: !key, action: "pc5", view: opportunityPc5View(api, detailed) }
   } else {
     const api = key
       ? await fetchFromApi(opportunitiesUrl("Pc6"), key, request.woz, opportunityPc6Schema, request.bbox)
-      : { streetThresholds: [], streets: [] }
+      : demoOpportunityPc6(request.woz)
     response = { demo: !key, action: "pc6", view: opportunityPc6View(api, detailed) }
   }
   return json(response)

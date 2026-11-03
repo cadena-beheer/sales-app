@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js"
 import { z } from "zod"
-import { TEMPORARY_PASSWORD, type AdminUser } from "../_shared/admin-types.ts"
+import { TEMPORARY_PASSWORD, type AdminGroup, type AdminUser } from "../_shared/admin-types.ts"
 import { requireUser } from "../_shared/auth.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
 import { createAdminClient } from "../_shared/supabase.ts"
@@ -11,6 +11,8 @@ const profileFields = {
   isAdmin: z.boolean(),
   // Optional so an app that has not updated yet can still save a profile; missing = leave unchanged.
   scanContactFields: z.boolean().optional(),
+  // The same: missing = leave unchanged, null = no group.
+  groupId: z.uuid().nullable().optional(),
 }
 
 const requestSchema = z.discriminatedUnion("action", [
@@ -23,6 +25,15 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("update"), id: z.uuid(), ...profileFields }),
   z.object({ action: z.literal("resendInvite"), id: z.uuid(), redirectTo: z.url() }),
   z.object({ action: z.literal("setDisabled"), id: z.uuid(), disabled: z.boolean() }),
+  z.object({
+    action: z.literal("saveGroup"),
+    // Missing = a new group.
+    id: z.uuid().optional(),
+    name: z.string().trim().min(1, "Vul de naam van de groep in").max(100),
+    memberIds: z.array(z.uuid()).max(1000),
+    managerIds: z.array(z.uuid()).max(1000),
+  }),
+  z.object({ action: z.literal("deleteGroup"), id: z.uuid() }),
 ])
 
 /** Supabase blocks a user "forever" by banning for 100 years. */
@@ -41,7 +52,7 @@ serve(async (req) => {
 
   switch (body.action) {
     case "list":
-      return json({ users: await listUsers() })
+      return json(await listUsers())
 
     case "invite": {
       // No email: the account is active at once with the temporary password, which the admin passes on.
@@ -54,7 +65,7 @@ serve(async (req) => {
       if (error?.code === "email_exists") throw new HttpError(409, "Er bestaat al een gebruiker met dit e-mailadres")
       if (error) throw new HttpError(400, error.message)
       // The on_auth_user_created trigger created the profile from the metadata; only the flags are left.
-      if (body.isAdmin || body.scanContactFields) await updateProfile(caller.id, data.user.id, body)
+      if (body.isAdmin || body.scanContactFields || body.groupId) await updateProfile(caller.id, data.user.id, body)
       return json({ ok: true })
     }
 
@@ -85,10 +96,31 @@ serve(async (req) => {
       if (error) throw new HttpError(400, error.message)
       return json({ ok: true })
     }
+
+    case "saveGroup": {
+      const { error } = await admin.rpc("save_recruiter_group", {
+        p_actor: caller.id,
+        p_group_id: body.id ?? null,
+        p_name: body.name,
+        p_members: body.memberIds,
+        p_managers: body.managerIds,
+      })
+      if (error?.code === "23505") throw new HttpError(409, "Er is al een groep met deze naam")
+      if (error?.code === "P0002") throw new HttpError(404, "Deze groep bestaat niet meer")
+      if (error?.code === "23503") throw new HttpError(400, "Een van deze gebruikers bestaat niet meer")
+      if (error) throw error
+      return json({ ok: true })
+    }
+
+    case "deleteGroup": {
+      const { error } = await admin.rpc("delete_recruiter_group", { p_actor: caller.id, p_group_id: body.id })
+      if (error) throw error
+      return json({ ok: true })
+    }
   }
 })
 
-async function listUsers(): Promise<AdminUser[]> {
+async function listUsers(): Promise<{ users: AdminUser[]; groups: AdminGroup[] }> {
   const users: User[] = []
   for (let page = 1; ; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
@@ -97,19 +129,28 @@ async function listUsers(): Promise<AdminUser[]> {
     if (data.users.length < 1000) break
   }
 
-  const [{ data: profiles, error: profilesError }, { data: counts, error: countsError }] = await Promise.all([
-    admin.from("profiles").select("id, wervernaam, wervernr, is_admin, scan_contact_fields"),
+  const [
+    { data: profiles, error: profilesError },
+    { data: counts, error: countsError },
+    { data: groups, error: groupsError },
+    { data: managers, error: managersError },
+  ] = await Promise.all([
+    admin.from("profiles").select("id, wervernaam, wervernr, is_admin, scan_contact_fields, group_id"),
     admin.rpc("submission_counts"),
+    admin.from("recruiter_groups").select("id, name").order("name"),
+    admin.from("recruiter_group_managers").select("group_id, profile_id"),
   ])
   if (profilesError) throw profilesError
   if (countsError) throw countsError
+  if (groupsError) throw groupsError
+  if (managersError) throw managersError
 
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]))
   const submissionCount = new Map<string, number>(
     (counts as { user_id: string; submissions: number }[]).map((row) => [row.user_id, Number(row.submissions)]),
   )
 
-  return users
+  const list = users
     .map((user): AdminUser => {
       const profile = profileById.get(user.id)
       const banned = user.banned_until ? new Date(user.banned_until) > new Date() : false
@@ -120,6 +161,8 @@ async function listUsers(): Promise<AdminUser[]> {
         wervernr: profile?.wervernr ?? "",
         isAdmin: profile?.is_admin ?? false,
         scanContactFields: profile?.scan_contact_fields ?? false,
+        groupId: profile?.group_id ?? null,
+        managerOf: managers.filter((m) => m.profile_id === user.id).map((m) => m.group_id),
         status: banned ? "disabled" : user.email_confirmed_at ? "active" : "invited",
         invitedAt: user.invited_at ?? null,
         lastSignInAt: user.last_sign_in_at ?? null,
@@ -127,13 +170,20 @@ async function listUsers(): Promise<AdminUser[]> {
       }
     })
     .sort((a, b) => a.wervernaam.localeCompare(b.wervernaam, "nl"))
+  return { users: list, groups }
 }
 
 /** Updates a profile through the database function that records the acting admin in the audit log. */
 async function updateProfile(
   actorId: string,
   profileId: string,
-  profile: { wervernaam: string; wervernr: string; isAdmin: boolean; scanContactFields?: boolean },
+  profile: {
+    wervernaam: string
+    wervernr: string
+    isAdmin: boolean
+    scanContactFields?: boolean
+    groupId?: string | null
+  },
 ) {
   const { error } = await admin.rpc("update_profile_as_admin", {
     p_actor: actorId,
@@ -142,7 +192,10 @@ async function updateProfile(
     p_wervernr: profile.wervernr,
     p_is_admin: profile.isAdmin,
     p_scan_contact_fields: profile.scanContactFields ?? null,
+    p_set_group: profile.groupId !== undefined,
+    p_group_id: profile.groupId ?? null,
   })
   if (error?.code === "23505") throw new HttpError(409, "Dit wervernummer is al in gebruik")
+  if (error?.code === "23503") throw new HttpError(400, "Deze groep bestaat niet meer")
   if (error) throw error
 }

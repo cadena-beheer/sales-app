@@ -61,6 +61,8 @@ function merge(pages: Page[]): KpiData {
         .sort((a, b) => a.name.localeCompare(b.name, "nl")),
       cancellations: pages.flatMap((page) => page.response.stats.cancellations),
       reasons: pages.flatMap((page) => page.response.stats.reasons),
+      bankAfval: pages.flatMap((page) => page.response.stats.bankAfval),
+      afvalDelays: pages.flatMap((page) => page.response.stats.afvalDelays),
     },
   }
 }

@@ -68,7 +68,8 @@ src/
       use-scan-fill.ts          Camera scan → Claude → typing animation into the form
     outbox/                     Offline queue ("Wachtrij"): storage, auto-send hook, dialog
     dashboard/                  Results: sales per week/month, cancellations and their reasons (account menu)
-    admin/                      Recruiter management (list, invite, edit, block)
+    admin/                      Recruiter and group management (list, invite, edit, block)
+    monteurs/                   Where the monteurs live: entering them, for the pins on the map
   components/                   Shared UI: page-header.tsx and shadcn components in ui/ (generated)
   hooks/                        Generic hooks: useOnline, useDebouncedCheck, useProfile
   lib/                          api.ts (every backend call), errors, Supabase client, IndexedDB, PWA
@@ -121,7 +122,12 @@ code); only admins may pick another recruiter or the whole team. "Opzeggingen bi
 cancellation entered in ZMAdmin; periods ending less than four weeks before that are hatched as not complete. The
 app loads a year at a time going back ("Eerder"). Without `STATS_API_KEY` the function returns
 made-up numbers and the page says so. In development, open `http://localhost:5173/?demo` (sales manager) or
-`?demo=werver` to see the dashboard with demo data without logging in.
+`?demo=werver` to see the dashboard with demo data without logging in, and `?demo&beheer` for the admin page.
+
+**Bankafval.** A sale that was not cancelled but never paid. `Stats` sends it per sale day (`bankAfval`), and for one
+recruiter the customers behind it; it counts in Uitval and not in Netto. Until the endpoint sends it, the page looks as
+it did without it. Admins also see after how many days sales fell away (`afvalDelays`, removed by `statsFor` for
+anyone else). See `handoff/zmsuite-woz-index-bankafval.md`.
 
 **Sales map.** Account menu → "Verkoopkaart", shown together with the dashboard. Everyone sees where the whole
 team sold in the last 30 days, 90 days or year, cancelled sales included. The `sales-map` function reads
@@ -133,12 +139,17 @@ the shade, never a count. In development: `?demo&kaart` (admin) or `?demo=werver
 
 **Kansen.** The map's second view: where households are still "for grabs". The `sales-opportunities` function reads
 `GET …/Sales/2026.1/Opportunities?woz=low|mid|high`, where the Contracts API counts per street (PC6): CBS households
-minus our active customers (not archived, counted nightly), for the streets whose average WOZ value falls in the
-band (each band a third of all households), added up per PC4. So one promising street is never averaged away by the
+minus our active customers (not archived, counted nightly), for the streets whose WOZ index falls in the band (each
+band a third of all households), added up per PC4. The WOZ index is a street's average WOZ value as a percentage of
+its gemeente's average, so a band means cheap or expensive for that place, not nationally. So one promising street is never averaged away by the
 streets around it. The map shades PC4 areas in blue by open households; tapping one asks
 `…/Opportunities/{pc4}` for its best streets, with names from ZMPostcode. Admins see households, customers, open
-households and WOZ per area and per street; recruiters see only the shades and the ranked streets. All numbers are
+households and the WOZ index per street; recruiters see only the shades and the ranked streets. All numbers are
 computed in the backend; the app only draws what it receives.
+
+**Monteurs.** On "Kansen" and "Toewijzen" admins also see pins where the monteurs live, and enter them with the
+pencil next to the "Monteurs" button. The location comes from PDOK when the address is entered. These are home
+addresses: row level security on `monteur_homes` lets only admins read or change them.
 
 **Zooming in.** From zoom 11 the map shows PC5 areas, from zoom 13 the streets (PC6), each asked for per view
 (`…/Map/Pc5`, `…/Map/Pc6`, `…/Opportunities/Pc5`, `…/Opportunities/Pc6` with `bbox`). A PC5 is ranked by its
@@ -199,8 +210,11 @@ as-is in code so they match the Google Sheet and the back office.
 | contracttype                   | Service or Zakelijk (business)                                                 |
 | betaaltermijn / betaalperiode  | Payment term and method (machtiging = direct debit, acceptgiro = payment slip) |
 | opmerkingen                    | Remarks (digital only, not on the paper form)                                  |
-| bruto / netto                  | Sales written / sales that were not cancelled                                  |
-| opzegging / opgezegd / uitval  | Cancellation / cancelled / share of the sales that was cancelled               |
+| bruto / netto                  | Sales written / sales that were not cancelled and were paid                    |
+| opzegging / opgezegd / uitval  | Cancellation / cancelled / share of the sales that was cancelled or not paid   |
+| bankafval                      | Sale that was not cancelled but never paid                                     |
+| monteur                        | Service technician                                                             |
+| gemeente                       | Municipality                                                                   |
 | wachtrij / outbox              | Forms waiting to be sent (`features/outbox`)                                   |
 | Bellijst                       | Former name of the app ("call list"); now called Z&M Sales                     |
 
@@ -265,3 +279,7 @@ Project ref `nrdpixagvynzexwzqtlf`. Set secrets with
 
 Admins manage recruiters in the app (account menu → "Beheer wervers"). A profile row is created automatically
 for every new user from the invite metadata (`wervernaam`, `wervernr`).
+
+Groups, usually an office, are managed on the same page. A werver is in one group at most (`profiles.group_id`, also
+in the werver's own dialog); a group has any number of managers and a manager may run several groups
+(`recruiter_group_managers`). Being a manager gives no rights yet.
