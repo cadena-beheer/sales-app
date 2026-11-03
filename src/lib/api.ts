@@ -725,7 +725,8 @@ async function adminCall<T = unknown>(body: Record<string, unknown>): Promise<T>
 
 export const adminApi = {
   list: () => adminCall<{ users: AdminUser[]; groups: AdminGroup[] }>({ action: "list" }),
-  invite: (email: string, profile: AdminProfileInput) => adminCall({ action: "invite", email, ...profile }),
+  invite: (email: string, profile: AdminProfileInput) =>
+    adminCall<{ password: string }>({ action: "invite", email, ...profile }),
   update: (id: string, profile: AdminProfileInput) => adminCall({ action: "update", id, ...profile }),
   resendInvite: (id: string) => adminCall({ action: "resendInvite", id, redirectTo: window.location.origin }),
   setDisabled: (id: string, disabled: boolean) => adminCall({ action: "setDisabled", id, disabled }),
