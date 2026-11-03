@@ -43,7 +43,7 @@ export function demoAdminCall(body: Body): unknown {
     case "invite":
       users = [...users, person(crypto.randomUUID(), String(body.wervernaam), String(body.wervernr), profile(body))]
       users.at(-1)!.email = String(body.email)
-      return { ok: true }
+      return { ok: true, password: "demo-wachtwoord" }
     case "update":
       users = users.map((user) => (user.id === body.id ? { ...user, ...profile(body) } : user))
       return { ok: true }
