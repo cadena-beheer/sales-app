@@ -12,7 +12,6 @@ import { getErrorMessage } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 import { AfvalBreakdown } from "./afval-breakdown"
 import { CancellationList } from "./cancellation-list"
-import { Fold } from "./fold"
 import { NettoSummary } from "./netto-summary"
 import { PeriodBar } from "./period-bar"
 import { PeriodChart } from "./period-chart"
@@ -280,10 +279,11 @@ export function DashboardPage({ profile, onBack }: Props) {
                 </Card>
               ) : (
                 <Card>
+                  <CardHeader>
+                    <CardTitle>Afgevallen klanten</CardTitle>
+                  </CardHeader>
                   <CardContent>
-                    <Fold title="Afgevallen klanten">
-                      <CancellationList items={customers.items} bank={customers.bank} />
-                    </Fold>
+                    <CancellationList items={customers.items} bank={customers.bank} />
                   </CardContent>
                 </Card>
               )}

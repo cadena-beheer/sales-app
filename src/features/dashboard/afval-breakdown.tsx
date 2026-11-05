@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
-import { Fold } from "./fold"
 import { AFVAL_AGES, formatRate, isWindowComplete, type Period } from "./periods"
+import { ShowMore } from "./show-more"
 
 type Props = {
   period: Period
@@ -18,8 +18,8 @@ type Props = {
 }
 
 /**
- * All the afval of one period, also what is too late to count against netto: the numbers, and folded away when and why.
- * Every percentage is a share of the bruto sales, so the rows of a block add up, and the bars are on one scale.
+ * All the afval of one period, also what is too late to count against netto: the numbers, then when and why, each starting
+ * with its first rows. Every percentage is a share of the bruto sales, so the rows of a block add up, and the bars are on one scale.
  */
 export function AfvalBreakdown(props: Props) {
   const { period, showBank, byAge, enteredUntil, reasons, reasonsNote, voorgelicht, voorgelichtReason } = props
@@ -44,12 +44,15 @@ export function AfvalBreakdown(props: Props) {
         <Stat label="Totaal" count={afval} share={share(afval)} />
         <Stat label="Opgezegd" swatch="bg-opgezegd" count={period.cancelled} share={share(period.cancelled)} />
         {showBank && <Stat label="Bankafval" swatch="bg-bankafval" count={period.bank} share={share(period.bank)} />}
-        {voorgelicht !== null && <Stat label={voorgelichtReason} count={voorgelicht} share={share(voorgelicht)} />}
+        {voorgelicht !== null && (
+          <Stat label={voorgelichtReason} swatch="bg-voorgelicht" count={voorgelicht} share={share(voorgelicht)} />
+        )}
       </dl>
 
       {byAge && (
-        <Fold title="Wanneer na de verkoop">
-          <Rows>
+        <section className="flex flex-col gap-2.5">
+          <h3 className="font-medium">Wanneer na de verkoop</h3>
+          <Rows limit={2}>
             {ages.map((age) => (
               <Row
                 key={age.label}
@@ -69,15 +72,18 @@ export function AfvalBreakdown(props: Props) {
               </Row>
             )}
           </Rows>
-        </Fold>
+        </section>
       )}
 
-      <Fold title="Reden van opzeggen">
-        {reasonsNote && <p className="mb-2 text-xs text-muted-foreground">{reasonsNote}</p>}
-        <Rows>
+      <section className="flex flex-col gap-2.5">
+        <div>
+          <h3 className="font-medium">Reden van opzeggen</h3>
+          {reasonsNote && <p className="text-xs text-muted-foreground">{reasonsNote}</p>}
+        </div>
+        <Rows limit={3}>
           {voorgelicht !== null && (
             <Row label={voorgelichtReason} note={share(voorgelicht)} count={voorgelicht} max={reasonMax} strong>
-              <Bar color="bg-opgezegd" count={voorgelicht} />
+              <Bar color="bg-voorgelicht" count={voorgelicht} />
             </Row>
           )}
           {others.map((r) => (
@@ -88,14 +94,14 @@ export function AfvalBreakdown(props: Props) {
               count={r.count}
               max={reasonMax}
             >
-              <Bar color="bg-muted-foreground/50" count={r.count} />
+              <Bar color="bg-opgezegd" count={r.count} />
             </Row>
           ))}
           {reasons.length === 0 && voorgelicht === null && (
             <li className="text-sm text-muted-foreground">Geen opzeggingen.</li>
           )}
         </Rows>
-      </Fold>
+      </section>
     </div>
   )
 }
@@ -117,8 +123,12 @@ function Stat({ label, swatch, count, share }: StatProps) {
   )
 }
 
-function Rows({ children }: { children: ReactNode }) {
-  return <ul className="flex flex-col gap-2">{children}</ul>
+function Rows({ limit, children }: { limit: number; children: ReactNode }) {
+  return (
+    <ShowMore limit={limit} className="flex flex-col gap-2">
+      {children}
+    </ShowMore>
+  )
 }
 
 type RowProps = {

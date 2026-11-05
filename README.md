@@ -132,13 +132,13 @@ their own, because the function asks the endpoint for their wervernr). See `hand
 or months (netto, opgezegd and bankafval as columns, netto's number inside and the afval percentage above), then all the afval of
 the selected period by kind, by time after the sale and by reason, with "Verkeerd voorgelicht" always listed,
 and finally who it is (per werver, or the customers of one recruiter). Every percentage is a share of the bruto sales.
-When and why, and the customers, stay folded until tapped. For one recruiter the first card's bar also runs
+When and why, and the customers, start with their first rows and a button to show all. For one recruiter the first card's bar also runs
 on to the next bonus of the calendar month (50 netto, then 60, 70, …), and the month chart has a line at 50. The page
 opens on the month view, because the bonus is per month.
 
 **Afgevallen klanten.** Shown by street and house number. The endpoint has to send the address first
 (`handoff/zmsuite-afval-address.md`); until then a line shows the name. A button to Street View is ready but hidden
-(`SHOW_STREET_VIEW`) until then. Google needs a location for that, so the phone asks PDOK for it when the list is opened;
+(`SHOW_STREET_VIEW`) until then. Google needs a location for that, so the phone asks PDOK for it for the rows it shows;
 without an answer the button searches the address in Google Maps.
 
 **Netto.** Bruto minus the afval within 14 days of the sale (`COUNTED_DAYS`), because only that counts for the bonus; the

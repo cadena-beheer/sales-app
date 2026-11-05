@@ -20,6 +20,8 @@
   --color-netto: var(--netto);
   --color-opgezegd: var(--opgezegd);
   --color-bankafval: var(--bankafval);
+  --color-voorgelicht: var(--voorgelicht);
+  --color-opgezegd-strong: var(--opgezegd-strong);
   --color-afval-14: var(--afval-14);
   --color-afval-30: var(--afval-30);
   --color-afval-jaar: var(--afval-jaar);
@@ -84,6 +86,10 @@
   --netto: #2a78d6;
   --opgezegd: #eb6834;
   --bankafval: #8e5bd0;
+  /* The worst reason a customer can give. */
+  --voorgelicht: #b3261e;
+  /* Opgezegd behind white text: darker, for 4.5:1. */
+  --opgezegd-strong: #c8511f;
   /* Darker the sooner after the sale: those say the most about the sale itself. */
   --afval-14: #a8200d;
   --afval-30: #eb6834;

@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { lookupHouse } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { COUNTED_DAYS, daysBetween, formatDay } from "./periods"
+import { ShowMore } from "./show-more"
+import { VERKEERD_VOORGELICHT } from "./team-table"
 
 /** Off until the endpoint sends addresses (handoff/zmsuite-afval-address.md). */
 const SHOW_STREET_VIEW: boolean = false
@@ -47,7 +49,7 @@ export function CancellationList({ items, bank }: Props) {
     return <p className="py-2 text-sm text-muted-foreground">Geen afval in deze periode.</p>
   }
   return (
-    <ul className="-my-2 divide-y">
+    <ShowMore limit={3} className="-mt-3 divide-y">
       {lines.map((line, index) => {
         const days = line.on ? daysBetween(line.soldOn, line.on) : null
         return (
@@ -61,10 +63,14 @@ export function CancellationList({ items, bank }: Props) {
                 {line.street ? `${line.street} ${line.houseNumber}` : line.name || "Onbekende klant"}
                 {line.city && <span className="font-normal text-muted-foreground"> · {line.city}</span>}
               </p>
-              <p className="text-sm text-muted-foreground">
-                {line.kind === "Bankafval" && <span className="font-medium text-foreground">Bankafval · </span>}
-                {line.reason}
-                {line.detail && ` · “${line.detail}”`}
+              <p className="mt-1 text-sm text-muted-foreground">
+                <span
+                  className={cn("inline-block rounded-md px-2 py-0.5 text-xs font-medium text-white", badgeColor(line))}
+                >
+                  {line.kind === "Bankafval" && "Bankafval · "}
+                  {line.reason}
+                </span>
+                {line.detail && ` “${line.detail}”`}
               </p>
             </div>
             {line.on && days !== null && (
@@ -84,8 +90,13 @@ export function CancellationList({ items, bank }: Props) {
           </li>
         )
       })}
-    </ul>
+    </ShowMore>
   )
+}
+
+function badgeColor(line: Line): string {
+  if (line.kind === "Bankafval") return "bg-bankafval"
+  return line.reason === VERKEERD_VOORGELICHT ? "bg-voorgelicht" : "bg-opgezegd-strong"
 }
 
 /** "29 okt", with the year when that is not the year of the sale. */
