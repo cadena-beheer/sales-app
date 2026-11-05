@@ -10,33 +10,35 @@ import { Spinner } from "@/components/ui/spinner"
 import type { Profile } from "@/hooks/use-profile"
 import { getErrorMessage } from "@/lib/errors"
 import { cn } from "@/lib/utils"
-import { AfvalDelays } from "./afval-delays"
+import { AfvalBreakdown } from "./afval-breakdown"
 import { CancellationList } from "./cancellation-list"
+import { Fold } from "./fold"
+import { NettoSummary } from "./netto-summary"
 import { PeriodBar } from "./period-bar"
 import { PeriodChart } from "./period-chart"
 import {
   addDays,
+  BONUS_FIRST,
   buildPeriods,
+  chartPeriods,
   formatDay,
   formatTimestamp,
-  isProvisional,
+  isCountedComplete,
   periodDates,
   periodKey,
   periodTitle,
   reasonsIn,
-  SETTLE_DAYS,
+  today,
   type Granularity,
 } from "./periods"
-import { ReasonList } from "./reason-list"
-import { StatTiles } from "./stat-tiles"
-import { TeamTable } from "./team-table"
+import { TeamTable, VERKEERD_VOORGELICHT } from "./team-table"
 import { useKpi } from "./use-kpi"
 
 type Props = { profile: Profile | undefined; onBack: () => void }
 
 /**
- * Results from ZMAdmin for one week or month at a time: the numbers first, then the trend, the cancellations and
- * why customers cancelled. A recruiter sees their own; the sales manager sees the team and can open any recruiter.
+ * Results from ZMAdmin for one week or month at a time: netto first, then the last few periods, then what the afval
+ * consists of and who it is. A recruiter sees their own; the sales manager sees the team and can open any recruiter.
  */
 export function DashboardPage({ profile, onBack }: Props) {
   const isAdmin = profile?.isAdmin ?? false
@@ -45,22 +47,40 @@ export function DashboardPage({ profile, onBack }: Props) {
   const wervernr = isAdmin ? picked : (profile?.wervernr ?? null)
   const team = useKpi(null, isAdmin)
   const kpi = useKpi(wervernr, profile !== undefined)
-  const [granularity, setGranularity] = useState<Granularity>("week")
+  const [granularity, setGranularity] = useState<Granularity>("month")
   const [selectedKey, setSelectedKey] = useState<string>()
 
   const data = kpi.data
   const periods = useMemo(
-    () => (data ? buildPeriods(data.stats.days, granularity, data.from, data.to) : []),
+    () => (data ? buildPeriods(data.stats.days, granularity, data.from, data.to, data.stats.afvalDelays) : []),
     [data, granularity],
+  )
+  const months = useMemo(
+    () => (data ? buildPeriods(data.stats.days, "month", data.from, data.to, data.stats.afvalDelays) : []),
+    [data],
   )
   const selected = periods.find((p) => p.key === selectedKey) ?? periods.at(-1)
   const selectedIndex = selected ? periods.indexOf(selected) : -1
   const enteredUntil = data?.stats.cancellationsEnteredUntil ?? null
-  const provisional = selected ? isProvisional(selected, enteredUntil) : false
+  const provisional = selected ? !isCountedComplete(selected, enteredUntil) : false
   // Bankafval shows once ZMAdmin sends it.
   const showBank = data?.stats.days.some((day) => day.bankAfval !== undefined) ?? false
+  // How long after the sale sales fell away shows once ZMAdmin sends it.
+  const byAge = (data?.stats.afvalDelays.length ?? 0) > 0
   const recruiters = team.data?.stats.recruiters ?? data?.stats.recruiters ?? []
-  // "week 41" or "juni 2025" in card titles; the bar at the top has the dates.
+  const unit = granularity === "week" ? "week" : "maand"
+  // The bonus is per recruiter per calendar month. A week counts towards the month its Thursday is in.
+  const bonusPeriod =
+    selected && wervernr !== null
+      ? months.find((month) => month.key === periodKey(addDays(selected.start, 3), "month"))
+      : undefined
+  const customers = selected
+    ? {
+        items: data?.stats.cancellations.filter((c) => c.soldOn >= selected.start && c.soldOn <= selected.end) ?? [],
+        bank: data?.stats.bankAfval.filter((b) => b.soldOn >= selected.start && b.soldOn <= selected.end) ?? [],
+      }
+    : { items: [], bank: [] }
+  // "week 41" or "juni 2025". Only the bar at the top names the period: every card below is about it.
   const periodName = selected ? periodTitle(selected, granularity) : ""
 
   // A recruiter's reasons come from their own cancellations, which carry the sale day. The team only has the totals
@@ -75,6 +95,8 @@ export function DashboardPage({ profile, onBack }: Props) {
             selected,
           )
         : reasonsIn(data.stats.reasons, reasonsPerPeriod ? selected : null)
+
+  const voorgelicht = reasonsPerPeriod ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
 
   function changeGranularity(next: Granularity) {
     // Stay on the same moment: the week or month that contains the selected period's first day.
@@ -130,8 +152,8 @@ export function DashboardPage({ profile, onBack }: Props) {
         <PeriodBar
           granularity={granularity}
           onGranularity={changeGranularity}
-          title={periodName.charAt(0).toUpperCase() + periodName.slice(1)}
-          subtitle={periodDates(selected, granularity)}
+          title={granularity === "month" ? periodName.split(" ")[0] : periodName}
+          subtitle={granularity === "month" ? selected.start.slice(0, 4) : periodDates(selected, granularity)}
           canPrevious={selectedIndex > 0 || kpi.hasNextPage}
           canNext={selectedIndex < periods.length - 1}
           loadingPrevious={kpi.isFetchingNextPage}
@@ -167,33 +189,29 @@ export function DashboardPage({ profile, onBack }: Props) {
         )}
 
         {data && selected && (
-          // Large screens: the numbers and the trend on the left, the people and the reasons on the right.
+          // Large screens: netto and the last periods on the left, what the afval consists of and who on the right.
           <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
             <div className="flex min-w-0 flex-col gap-4">
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
-                    <span className="first-letter:uppercase">{periodName}</span>
-                    {provisional && (
-                      <Badge variant="secondary">
-                        <ClockIcon /> voorlopig
-                      </Badge>
-                    )}
-                  </CardTitle>
-                </CardHeader>
                 <CardContent className="flex flex-col gap-3">
-                  <StatTiles period={selected} showBank={showBank} />
-                  <div className="flex gap-2 text-xs text-muted-foreground">
+                  <NettoSummary
+                    period={selected}
+                    bonusMonth={
+                      bonusPeriod
+                        ? {
+                            period: bonusPeriod,
+                            running: bonusPeriod.end >= today(),
+                            final: isCountedComplete(bonusPeriod, enteredUntil),
+                          }
+                        : null
+                    }
+                  />
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <ClockIcon className="size-4 shrink-0" />
-                    <p>
-                      Opzeggingen bijgewerkt t/m{" "}
-                      <strong className="font-semibold text-foreground">
-                        {enteredUntil ? formatTimestamp(enteredUntil) : "onbekend"}
-                      </strong>
-                      .
-                      {provisional &&
-                        ` Opzeggingen komen vaak pas weken na de verkoop binnen; deze cijfers zijn compleet als dat tot ${SETTLE_DAYS / 7} weken na deze periode is bijgewerkt.`}
+                    <p className="min-w-0 flex-1">
+                      Opzeggingen bijgewerkt t/m {enteredUntil ? formatTimestamp(enteredUntil) : "onbekend"}.
                     </p>
+                    {provisional && <Badge variant="secondary">voorlopig</Badge>}
                   </div>
                   {data.demo && (
                     <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
@@ -205,77 +223,50 @@ export function DashboardPage({ profile, onBack }: Props) {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Verloop per {granularity === "week" ? "week" : "maand"}</CardTitle>
-                  <CardDescription>
-                    Tik op een {granularity === "week" ? "week" : "maand"} om die te bekijken.
-                  </CardDescription>
+                  <CardTitle>Netto en afval per {unit}</CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent>
                   <PeriodChart
-                    periods={periods}
+                    periods={chartPeriods(periods, selectedIndex)}
                     granularity={granularity}
                     selectedKey={selected.key}
                     onSelect={setSelectedKey}
-                    isProvisional={(period) => isProvisional(period, enteredUntil)}
-                    canLoadMore={kpi.hasNextPage}
-                    loadingMore={kpi.isFetchingNextPage}
-                    onLoadMore={() => void kpi.fetchNextPage()}
+                    isProvisional={(period) => !isCountedComplete(period, enteredUntil)}
+                    target={granularity === "month" && wervernr !== null ? BONUS_FIRST : null}
                   />
-                  <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <li className="flex items-center gap-1.5">
-                      <span aria-hidden className="size-2.5 rounded-[3px] bg-netto" /> Netto
-                    </li>
-                    <li className="flex items-center gap-1.5">
-                      <span aria-hidden className="size-2.5 rounded-[3px] bg-opgezegd" /> Opgezegd
-                    </li>
-                    {showBank && (
-                      <li className="flex items-center gap-1.5">
-                        <span aria-hidden className="size-2.5 rounded-[3px] bg-bankafval" /> Bankafval
-                      </li>
-                    )}
-                    <li className="flex items-center gap-1.5">
-                      <span
-                        aria-hidden
-                        className="size-2.5 rounded-[3px] bg-[repeating-linear-gradient(135deg,transparent_0_2px,var(--color-muted-foreground)_2px_3px)]"
-                      />
-                      Nog niet compleet
-                    </li>
-                  </ul>
                 </CardContent>
               </Card>
             </div>
             <div className="flex min-w-0 flex-col gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Redenen van opzeggingen · {reasonsPerPeriod ? periodName : "alles geladen"}</CardTitle>
-                  {!reasonsPerPeriod && (
-                    <CardDescription>
-                      Verkopen sinds {formatDay(data.from)} {data.from.slice(0, 4)}; per{" "}
-                      {granularity === "week" ? "week" : "maand"} volgt nog.
-                    </CardDescription>
-                  )}
+                  <CardTitle>Alle afval</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ReasonList reasons={reasons} />
+                  <AfvalBreakdown
+                    period={selected}
+                    showBank={showBank}
+                    byAge={byAge}
+                    enteredUntil={enteredUntil}
+                    reasons={reasons}
+                    reasonsNote={
+                      reasonsPerPeriod
+                        ? null
+                        : `Verkopen sinds ${formatDay(data.from)} ${data.from.slice(0, 4)}; per ${unit} volgt nog.`
+                    }
+                    voorgelicht={voorgelicht}
+                    voorgelichtReason={VERKEERD_VOORGELICHT}
+                  />
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    {wervernr === null ? "Per werver" : showBank ? "Opzeggingen en bankafval" : "Opzeggingen"} ·{" "}
-                    {periodName}
-                  </CardTitle>
-                  <CardDescription>
-                    {wervernr === null
-                      ? "Tik op een werver voor diens opzeggingen."
-                      : showBank
-                        ? "Opgezegde en niet-betalende klanten uit de verkopen van deze periode."
-                        : "Opgezegde klanten uit de verkopen van deze periode."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {wervernr === null ? (
+              {wervernr === null ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Per werver</CardTitle>
+                    <CardDescription>Tik op een werver voor diens afgevallen klanten.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
                     <TeamTable
                       stats={data.stats}
                       period={selected}
@@ -285,26 +276,14 @@ export function DashboardPage({ profile, onBack }: Props) {
                         window.scrollTo({ top: 0 })
                       }}
                     />
-                  ) : (
-                    <CancellationList
-                      items={data.stats.cancellations.filter(
-                        (c) => c.soldOn >= selected.start && c.soldOn <= selected.end,
-                      )}
-                      bank={data.stats.bankAfval.filter((b) => b.soldOn >= selected.start && b.soldOn <= selected.end)}
-                      showDays={isAdmin}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              {isAdmin && data.stats.afvalDelays.length > 0 && (
+                  </CardContent>
+                </Card>
+              ) : (
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Afval na hoeveel dagen · {periodName}</CardTitle>
-                    <CardDescription>Hoe lang na de verkoop de verkopen van deze periode afvielen.</CardDescription>
-                  </CardHeader>
                   <CardContent>
-                    <AfvalDelays delays={data.stats.afvalDelays} period={selected} />
+                    <Fold title="Afgevallen klanten">
+                      <CancellationList items={customers.items} bank={customers.bank} />
+                    </Fold>
                   </CardContent>
                 </Card>
               )}

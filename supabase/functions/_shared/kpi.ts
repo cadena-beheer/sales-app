@@ -44,6 +44,10 @@ export const salesStatsSchema = z.object({
       regNr: z.string(),
       name: z.string(),
       city: z.string(),
+      /** The customer's home address; empty until the endpoint sends it (handoff/zmsuite-afval-address.md). */
+      street: z.string().default(""),
+      houseNumber: z.string().default(""),
+      postcode: z.string().default(""),
       soldOn: isoDate,
       cancelledOn: z.string().nullable(),
       reason: z.string(),
@@ -53,8 +57,16 @@ export const salesStatsSchema = z.object({
   /**
    * Reasons of the cancelled sales per sale day, so they follow the selected week or month. `date` is optional until
    * the endpoint sends it (ZMSuite change request); without it the team view shows totals for the loaded range.
+   * `recruiter` is optional too; with it the team table can show a reason per recruiter.
    */
-  reasons: z.array(z.object({ date: isoDate.optional(), reason: z.string(), count: z.number().int() })),
+  reasons: z.array(
+    z.object({
+      date: isoDate.optional(),
+      recruiter: z.string().optional(),
+      reason: z.string(),
+      count: z.number().int(),
+    }),
+  ),
   /** One recruiter only (empty for the team), newest first: the customers behind `bankAfval`. */
   bankAfval: z
     .array(
@@ -62,6 +74,10 @@ export const salesStatsSchema = z.object({
         regNr: z.string(),
         name: z.string(),
         city: z.string(),
+        /** The customer's home address; empty until the endpoint sends it (handoff/zmsuite-afval-address.md). */
+        street: z.string().default(""),
+        houseNumber: z.string().default(""),
+        postcode: z.string().default(""),
         soldOn: isoDate,
         /** When the last debit came back; for an acceptgiro, when the customer was removed. */
         returnedOn: z.string().nullable(),
@@ -71,13 +87,14 @@ export const salesStatsSchema = z.object({
     )
     .default([]),
   /**
-   * How many days after the sale it fell away, per sale day: how many sales, for each number of days. Admins only:
-   * statsFor removes it for anyone else.
+   * How many days after the sale it fell away, per sale day: how many sales, for each number of days. `recruiter` is
+   * optional; with it the team table can show a rate per recruiter.
    */
   afvalDelays: z
     .array(
       z.object({
         date: isoDate,
+        recruiter: z.string().optional(),
         kind: z.enum(["opgezegd", "bank"]),
         days: z.number().int(),
         count: z.number().int(),
@@ -92,11 +109,6 @@ export type SalesStatsCancellation = SalesStats["cancellations"][number]
 export type SalesStatsReason = SalesStats["reasons"][number]
 export type SalesStatsBankAfval = SalesStats["bankAfval"][number]
 export type SalesStatsDelay = SalesStats["afvalDelays"][number]
-
-/** What the caller may see: after how many days sales fall away is for admins, so a recruiter's phone never gets it. */
-export function statsFor(stats: SalesStats, isAdmin: boolean): SalesStats {
-  return isAdmin ? stats : { ...stats, afvalDelays: [] }
-}
 
 export type KpiResponse = {
   /** True when the Contracts API is not configured and the numbers are made up. */

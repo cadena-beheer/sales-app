@@ -13,7 +13,41 @@ export type Period = {
   cancelled: number
   /** Sold, not cancelled, but never paid. */
   bank: number
+  /** Per step of AFVAL_AGES, how many sales fell away that long after the sale; zeros when that is not known. */
+  aged: { opgezegd: number[]; bank: number[] }
+  /** The afval that counts against netto and the bonus: see COUNTED_DAYS. */
+  counted: { opgezegd: number; bank: number }
 }
+
+/**
+ * Only what falls away this many days after the sale counts against netto and the bonus; later afval shows in the
+ * breakdown but changes neither.
+ */
+export const COUNTED_DAYS = 14
+
+/**
+ * How long after the sale sales fall away: first days are about the sale itself, after a year about the renewal.
+ * A month's or a week's total grows for years, so only what fell away within a fixed time compares periods fairly.
+ */
+export const AFVAL_AGES = [
+  { label: "Binnen 14 dagen", short: "≤ 14 dagen", upTo: 14, color: "bg-afval-14" },
+  { label: "Binnen 30 dagen", short: "15–30 dagen", upTo: 30, color: "bg-afval-30" },
+  { label: "Binnen 1 jaar", short: "31 dagen–1 jaar", upTo: 365, color: "bg-afval-jaar" },
+  { label: "Na 1 jaar", short: "Na 1 jaar", upTo: Infinity, color: "bg-afval-later" },
+] as const
+
+/** The windows a percentage can be over; null is everything that fell away so far. */
+export const AFVAL_WINDOWS = [
+  { days: 14, label: "14 dagen" },
+  { days: 30, label: "30 dagen" },
+  { days: 365, label: "1 jaar" },
+  { days: null, label: "Alles" },
+] as const
+
+export type AfvalWindow = (typeof AFVAL_WINDOWS)[number]["days"]
+
+/** Which step of AFVAL_AGES a number of days falls in. */
+export const ageStep = (days: number) => AFVAL_AGES.findIndex((age) => days <= age.upTo)
 
 const MONTHS = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
 const MONTHS_LONG = [
@@ -35,7 +69,13 @@ const MONTHS_LONG = [
  * Every week or month whose first day is on or after `from` and that has started by `to`, oldest first, also
  * when nothing was sold. A week starts on Monday (ISO).
  */
-export function buildPeriods(days: SalesStatsDay[], granularity: Granularity, from: string, to: string): Period[] {
+export function buildPeriods(
+  days: SalesStatsDay[],
+  granularity: Granularity,
+  from: string,
+  to: string,
+  delays: SalesStatsDelay[] = [],
+): Period[] {
   const periods: Period[] = []
   const byKey = new Map<string, Period>()
   for (let start = firstStartOnOrAfter(from, granularity); start <= to; start = nextStart(start, granularity)) {
@@ -46,6 +86,8 @@ export function buildPeriods(days: SalesStatsDay[], granularity: Granularity, fr
       sold: 0,
       cancelled: 0,
       bank: 0,
+      aged: { opgezegd: AFVAL_AGES.map(() => 0), bank: AFVAL_AGES.map(() => 0) },
+      counted: { opgezegd: 0, bank: 0 },
     }
     periods.push(period)
     byKey.set(period.key, period)
@@ -57,7 +99,48 @@ export function buildPeriods(days: SalesStatsDay[], granularity: Granularity, fr
     period.cancelled += day.cancelled
     period.bank += day.bankAfval ?? 0
   }
+  for (const delay of delays) {
+    const period = byKey.get(periodKey(delay.date, granularity))
+    if (period) period.aged[delay.kind][ageStep(delay.days)] += delay.count
+  }
+  for (const period of periods) {
+    // Without delays nothing says when it fell away. Then all of it counts, rather than netto looking like bruto.
+    period.counted =
+      delays.length > 0
+        ? { opgezegd: period.aged.opgezegd[0], bank: period.aged.bank[0] }
+        : { opgezegd: period.cancelled, bank: period.bank }
+  }
   return periods
+}
+
+/** Netto per recruiter per calendar month for the first bonus, and how much more for every next one: 50, 60, 70, … */
+export const BONUS_FIRST = 50
+const BONUS_STEP = 10
+
+/** The highest bonus a month's netto has reached (null for none), and the next one to go for. */
+export function bonusStages(netto: number): { reached: number | null; next: number } {
+  if (netto < BONUS_FIRST) return { reached: null, next: BONUS_FIRST }
+  const reached = BONUS_FIRST + Math.floor((netto - BONUS_FIRST) / BONUS_STEP) * BONUS_STEP
+  return { reached, next: reached + BONUS_STEP }
+}
+
+/** The afval that counts against netto. */
+export const countedAfval = (period: Pick<Period, "counted">) => period.counted.opgezegd + period.counted.bank
+
+/** Bruto minus the afval that counts. */
+export const nettoOf = (period: Pick<Period, "sold" | "counted">) => period.sold - countedAfval(period)
+
+/** Whether every sale of a period is past the days that count, as far as cancellations have been entered. */
+export const isCountedComplete = (period: Pick<Period, "end">, enteredUntil: string | null) =>
+  isWindowComplete(period, COUNTED_DAYS, enteredUntil)
+
+/** Columns in the chart: few enough to read at a glance on a phone. */
+export const CHART_PERIODS = 6
+
+/** The periods to chart: the newest ones, or, once further back than that, those up to the selected one. */
+export function chartPeriods(periods: Period[], selectedIndex: number): Period[] {
+  const end = selectedIndex < periods.length - CHART_PERIODS ? selectedIndex + 1 : periods.length
+  return periods.slice(Math.max(0, end - CHART_PERIODS), end)
 }
 
 /** "2026-W37" or "2026-09". */
@@ -212,6 +295,24 @@ export function formatTimestamp(timestamp: string): string {
 /** Share of the sales that fell away, cancelled or never paid, 0..1; null when nothing was sold. */
 export function uitvalRate(period: Pick<Period, "sold" | "cancelled" | "bank">): number | null {
   return period.sold > 0 ? (period.cancelled + period.bank) / period.sold : null
+}
+
+/** Share of the sales that fell away within a window, 0..1; null when nothing was sold. Null window: all so far. */
+export function uitvalWithin(period: Pick<Period, "sold" | "cancelled" | "bank" | "aged">, days: AfvalWindow) {
+  if (days === null) return uitvalRate(period)
+  if (period.sold === 0) return null
+  const steps = AFVAL_AGES.flatMap((age, step) => (age.upTo <= days ? [step] : []))
+  return steps.reduce((sum, step) => sum + period.aged.opgezegd[step] + period.aged.bank[step], 0) / period.sold
+}
+
+/** Whether every sale of a period has had this long to fall away, as far as cancellations have been entered. */
+export function isWindowComplete(
+  period: Pick<Period, "end">,
+  days: number | null,
+  enteredUntil: string | null,
+): boolean {
+  if (days === null) return true
+  return enteredUntil !== null && addDays(period.end, days) <= enteredUntil.slice(0, 10)
 }
 
 /** "25%", or "–" when nothing was sold. */

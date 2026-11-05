@@ -20,6 +20,10 @@
   --color-netto: var(--netto);
   --color-opgezegd: var(--opgezegd);
   --color-bankafval: var(--bankafval);
+  --color-afval-14: var(--afval-14);
+  --color-afval-30: var(--afval-30);
+  --color-afval-jaar: var(--afval-jaar);
+  --color-afval-later: var(--afval-later);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
@@ -80,6 +84,11 @@
   --netto: #2a78d6;
   --opgezegd: #eb6834;
   --bankafval: #8e5bd0;
+  /* Darker the sooner after the sale: those say the most about the sale itself. */
+  --afval-14: #a8200d;
+  --afval-30: #eb6834;
+  --afval-jaar: #f5a667;
+  --afval-later: #fad7ae;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);

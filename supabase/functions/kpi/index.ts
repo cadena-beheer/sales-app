@@ -2,7 +2,8 @@ import { requireUser } from "../_shared/auth.ts"
 import { statsUrl } from "../_shared/contracts-api.ts"
 import { optionalEnv } from "../_shared/env.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
-import { kpiRequestSchema, salesStatsSchema, statsFor, type KpiResponse, type SalesStats } from "../_shared/kpi.ts"
+import { isTestRequest } from "../_shared/test-request.ts"
+import { kpiRequestSchema, salesStatsSchema, type KpiResponse, type SalesStats } from "../_shared/kpi.ts"
 import { demoSalesStats } from "../_shared/kpi-demo.ts"
 
 // Sales and cancellations for the dashboard, from ZMAdmin via the Contracts API (GET .../Sales/2026.1/Stats).
@@ -27,8 +28,10 @@ serve(async (req) => {
   const wervernr = profile.is_admin ? parsed.data.wervernr || null : profile.wervernr
 
   const key = optionalEnv("STATS_API_KEY")
-  const stats = key ? await fetchStats(statsUrl(), key, from, to, wervernr) : demoSalesStats(from, to, wervernr)
-  const response: KpiResponse = { demo: !key, wervernr, stats: statsFor(stats, profile.is_admin === true) }
+  const stats = key
+    ? await fetchStats(statsUrl(isTestRequest(req)), key, from, to, wervernr)
+    : demoSalesStats(from, to, wervernr)
+  const response: KpiResponse = { demo: !key, wervernr, stats }
   return json(response)
 })
 

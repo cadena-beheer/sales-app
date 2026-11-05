@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
+  bonusStages,
   buildPeriods,
+  countedAfval,
+  chartPeriods,
   daysBetween,
   delaySteps,
   formatTimestamp,
   isProvisional,
+  isWindowComplete,
+  nettoOf,
   longLabel,
   medianDelay,
   periodKey,
@@ -12,6 +17,7 @@ import {
   reasonsIn,
   shortLabel,
   uitvalRate,
+  uitvalWithin,
 } from "./periods"
 
 const day = (date: string, sold: number, cancelled = 0, recruiter = "0212BB") => ({ date, recruiter, sold, cancelled })
@@ -81,6 +87,42 @@ describe("labels", () => {
   it("names months, January with its year", () => {
     expect(shortLabel(january, "month")).toBe("jan '27")
     expect(longLabel(january, "month")).toBe("januari 2027")
+  })
+})
+
+describe("afval by age", () => {
+  const delay = (date: string, kind: "opgezegd" | "bank", days: number, count = 1) => ({ date, kind, days, count })
+  const [september] = buildPeriods([day("2026-09-01", 20, 5)], "month", "2026-09-01", "2026-09-30", [
+    delay("2026-09-01", "opgezegd", 14),
+    delay("2026-09-02", "opgezegd", 15),
+    delay("2026-09-03", "opgezegd", 365),
+    delay("2026-09-03", "opgezegd", 366, 2),
+    delay("2026-09-04", "bank", 40),
+    // Sold in another month.
+    delay("2026-10-01", "opgezegd", 3),
+  ])
+
+  it("puts each in its step, with the limits inclusive", () => {
+    expect(september.aged).toEqual({ opgezegd: [1, 1, 1, 2], bank: [0, 0, 1, 0] })
+  })
+
+  it("adds the steps up to the window, cancelled and at the bank", () => {
+    expect(uitvalWithin(september, 14)).toBe(1 / 20)
+    expect(uitvalWithin(september, 30)).toBe(2 / 20)
+    expect(uitvalWithin(september, 365)).toBe(4 / 20)
+  })
+
+  it("is the whole uitval without a window, and nothing without sales", () => {
+    expect(uitvalWithin(september, null)).toBe(5 / 20)
+    expect(uitvalWithin({ ...september, sold: 0 }, 14)).toBeNull()
+  })
+
+  it("calls a window complete once it has passed for the period's last sale", () => {
+    const period = { end: "2026-09-30" }
+    expect(isWindowComplete(period, 14, "2026-10-14T09:00:00")).toBe(true)
+    expect(isWindowComplete(period, 14, "2026-10-13T09:00:00")).toBe(false)
+    expect(isWindowComplete(period, 14, null)).toBe(false)
+    expect(isWindowComplete(period, null, null)).toBe(true)
   })
 })
 
@@ -188,5 +230,58 @@ describe("reasonsIn", () => {
         null,
       ),
     ).toEqual([{ reason: "Bedacht", count: 3 }])
+  })
+})
+
+describe("chartPeriods", () => {
+  const periods = buildPeriods([], "week", "2026-08-03", "2026-10-26")
+  const keys = (index: number) => chartPeriods(periods, index).map((p) => p.key)
+
+  it("shows the newest periods while one of those is selected", () => {
+    expect(keys(periods.length - 1)).toEqual(periods.slice(-6).map((p) => p.key))
+    expect(keys(periods.length - 6)).toEqual(periods.slice(-6).map((p) => p.key))
+  })
+
+  it("ends at the selected period once further back", () => {
+    expect(keys(periods.length - 7)).toEqual(periods.slice(-12, -6).map((p) => p.key))
+  })
+
+  it("shows fewer near the start", () => {
+    expect(chartPeriods(periods.slice(0, 3), 1)).toHaveLength(3)
+    expect(keys(2)).toEqual(periods.slice(0, 3).map((p) => p.key))
+  })
+})
+
+describe("bonusStages", () => {
+  it("goes for 50 until that is reached", () => {
+    expect(bonusStages(0)).toEqual({ reached: null, next: 50 })
+    expect(bonusStages(49)).toEqual({ reached: null, next: 50 })
+  })
+
+  it("then goes up in steps of ten", () => {
+    expect(bonusStages(50)).toEqual({ reached: 50, next: 60 })
+    expect(bonusStages(59)).toEqual({ reached: 50, next: 60 })
+    expect(bonusStages(70)).toEqual({ reached: 70, next: 80 })
+  })
+})
+
+describe("netto", () => {
+  const delay = (days: number, kind: "opgezegd" | "bank" = "opgezegd") => ({ date: "2026-09-01", kind, days, count: 1 })
+
+  it("counts only afval within 14 days", () => {
+    const [week] = buildPeriods([{ ...day("2026-09-01", 10, 3), bankAfval: 1 }], "month", "2026-09-01", "2026-09-30", [
+      delay(14),
+      delay(15),
+      delay(400),
+      delay(10, "bank"),
+    ])
+    expect(week.counted).toEqual({ opgezegd: 1, bank: 1 })
+    expect(countedAfval(week)).toBe(2)
+    expect(nettoOf(week)).toBe(8)
+  })
+
+  it("counts all afval when the endpoint does not say when it fell away", () => {
+    const [week] = buildPeriods([{ ...day("2026-09-01", 10, 3), bankAfval: 1 }], "month", "2026-09-01", "2026-09-30")
+    expect(nettoOf(week)).toBe(6)
   })
 })

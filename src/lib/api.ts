@@ -133,10 +133,9 @@ export const DEMO_MODE: "admin" | "werver" | null =
 export async function getKpi(request: KpiRequest): Promise<KpiResponse> {
   if (import.meta.env.DEV && DEMO_MODE) {
     const { demoSalesStats } = await import("@shared/kpi-demo")
-    const { statsFor } = await import("@shared/kpi")
     const wervernr = DEMO_MODE === "werver" ? "0212BB" : (request.wervernr ?? null)
     await new Promise((resolve) => setTimeout(resolve, 400))
-    const stats = statsFor(demoSalesStats(request.from, request.to, wervernr), DEMO_MODE === "admin")
+    const stats = demoSalesStats(request.from, request.to, wervernr)
     return { demo: true, wervernr, stats }
   }
   return invoke<KpiResponse>("kpi", { ...request })
@@ -378,6 +377,24 @@ export async function lookupPlace(lon: number, lat: number): Promise<string> {
     return placeLabel(doc?.wijknaam, doc?.woonplaatsnaam)
   } catch {
     return ""
+  }
+}
+
+/** Where a house lies as [lon, lat], from PDOK's address search; null when PDOK does not know it. */
+export async function lookupHouse(postcode: string, houseNumber: string): Promise<[number, number] | null> {
+  if (import.meta.env.DEV && DEMO_MODE) return [5.1214, 52.0907] // The demo's addresses are made up.
+  try {
+    const params = new URLSearchParams({ q: "*:*", rows: "1", fl: "centroide_ll" })
+    params.append("fq", "type:adres")
+    params.append("fq", `postcode:${postcode.replace(/\s/g, "")}`)
+    params.append("fq", `huisnummer:${Number.parseInt(houseNumber, 10)}`)
+    const response = await fetch(`${PDOK_SEARCH}?${params}`, { signal: AbortSignal.timeout(5_000) })
+    if (!response.ok) return null
+    const body = (await response.json()) as { response?: { docs?: { centroide_ll?: string }[] } }
+    const wkt = body.response?.docs?.[0]?.centroide_ll
+    return wkt ? point(wkt) : null
+  } catch {
+    return null
   }
 }
 

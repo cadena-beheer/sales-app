@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAppMenu } from "@/lib/app-menu"
-import { SHOW_AREAS, SHOW_RESULTS } from "@/lib/deployment"
+import { SHOW_AREAS, SHOW_MAP } from "@/lib/deployment"
 import type { View } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 
@@ -97,8 +97,8 @@ export function AppMenu() {
           <DropdownMenuSeparator />
           {page("form", <FilePenLineIcon />, "Formulier")}
           {page("sales", <ClipboardListIcon />, admin ? "Verkopen team" : "Mijn verkopen")}
-          {SHOW_RESULTS && page("dashboard", <ChartColumnIcon />, admin ? "Resultaten team" : "Mijn resultaten")}
-          {SHOW_RESULTS && page("map", <MapIcon />, "Verkoopkaart")}
+          {page("dashboard", <ChartColumnIcon />, admin ? "Resultaten" : "Mijn resultaten")}
+          {SHOW_MAP && page("map", <MapIcon />, "Verkoopkaart")}
           {SHOW_AREAS &&
             (admin
               ? page("planning", <CalendarDaysIcon />, "Werkgebieden")

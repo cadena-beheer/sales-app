@@ -68,6 +68,16 @@ const SURNAMES = [
   "van Dam",
   "Prins",
 ]
+const STREETS = [
+  "Dorpsstraat",
+  "Kerkstraat",
+  "Schoolstraat",
+  "Molenweg",
+  "Stationsstraat",
+  "Beukenlaan",
+  "Parkweg",
+  "Julianalaan",
+]
 const CITIES = [
   "Utrecht",
   "Amersfoort",
@@ -80,6 +90,14 @@ const CITIES = [
   "Hilversum",
   "Zeist",
 ]
+
+function demoAddress(random: () => number) {
+  return {
+    street: STREETS[Math.floor(random() * STREETS.length)],
+    houseNumber: String(1 + Math.floor(random() * 120)),
+    postcode: `${3500 + Math.floor(random() * 400)}AB`,
+  }
+}
 
 /** Demo statistics for sale days `from`..`to` (yyyy-MM-dd), for one recruiter code or (null) the whole team. */
 export function demoSalesStats(from: string, to: string, recruiter: string | null, now = new Date()): SalesStats {
@@ -98,8 +116,8 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
   const reasonCounts = new Map<string, number>()
   const bankAfval: SalesStatsBankAfval[] = []
   const delays = new Map<string, number>()
-  const delayed = (date: string, kind: string, days: number) => {
-    const key = `${date}|${kind}|${days}`
+  const delayed = (date: string, recruiter: string, kind: string, days: number) => {
+    const key = `${date}|${recruiter}|${kind}|${days}`
     delays.set(key, (delays.get(key) ?? 0) + 1)
   }
 
@@ -128,12 +146,13 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
           returned.setUTCDate(returned.getUTCDate() + after)
           if (toIso(returned) > enteredDay) continue // Not back from the bank yet.
           bank++
-          delayed(date, "bank", after)
+          delayed(date, r.number, "bank", after)
           if (recruiter) {
             bankAfval.push({
               regNr: `${1 + Math.floor(details() * 9)}${String(Math.floor(details() * 1e6)).padStart(6, "0")}`,
               name: `${INITIALS[Math.floor(details() * INITIALS.length)]} ${SURNAMES[Math.floor(details() * SURNAMES.length)]}`,
               city: CITIES[Math.floor(details() * CITIES.length)],
+              ...demoAddress(details),
               soldOn: date,
               returnedOn: `${toIso(returned)}T06:00:00`,
               reason: BANK_REASONS[Math.floor(details() * BANK_REASONS.length)],
@@ -141,8 +160,16 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
           }
           continue
         }
-        // Most cancellations arrive within the first weeks; some only around the renewal a year later.
-        const delay = random() < 0.9 ? 2 + Math.floor(random() * 28) : 330 + Math.floor(random() * 40)
+        // Most cancellations arrive within the first weeks; some during the year or around the renewal a year later.
+        const when = random()
+        const delay =
+          when < 0.45
+            ? 1 + Math.floor(random() * 14)
+            : when < 0.72
+              ? 15 + Math.floor(random() * 16)
+              : when < 0.84
+                ? 31 + Math.floor(random() * 300)
+                : 340 + Math.floor(random() * 120)
         const cancelledOn = new Date(day)
         cancelledOn.setUTCDate(cancelledOn.getUTCDate() + delay)
         if (cancelledOn.getUTCDay() === 0) cancelledOn.setUTCDate(cancelledOn.getUTCDate() + 1)
@@ -150,9 +177,10 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
         if (toIso(cancelledOn) > enteredDay) continue // Not entered yet.
 
         cancelled++
-        delayed(date, "opgezegd", Math.round((cancelledOn.getTime() - day.getTime()) / 86_400_000))
+        delayed(date, r.number, "opgezegd", Math.round((cancelledOn.getTime() - day.getTime()) / 86_400_000))
         const [reason, , reasonDetails] = pick(random, REASONS)
-        reasonCounts.set(`${date}|${reason}`, (reasonCounts.get(`${date}|${reason}`) ?? 0) + 1)
+        const reasonKey = `${date}|${r.number}|${reason}`
+        reasonCounts.set(reasonKey, (reasonCounts.get(reasonKey) ?? 0) + 1)
         if (recruiter) {
           const hour = 9 + Math.floor(details() * 7)
           const minute = Math.floor(details() * 60)
@@ -160,6 +188,7 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
             regNr: `${1 + Math.floor(details() * 9)}${String(Math.floor(details() * 1e6)).padStart(6, "0")}`,
             name: `${INITIALS[Math.floor(details() * INITIALS.length)]} ${SURNAMES[Math.floor(details() * SURNAMES.length)]}`,
             city: CITIES[Math.floor(details() * CITIES.length)],
+            ...demoAddress(details),
             soldOn: date,
             cancelledOn: `${toIso(cancelledOn)}T${pad(hour)}:${pad(minute)}:00`,
             reason,
@@ -183,12 +212,15 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
       .sort((a, b) => a.name.localeCompare(b.name)),
     cancellations,
     reasons: [...reasonCounts]
-      .map(([key, count]) => ({ date: key.slice(0, 10), reason: key.slice(11), count }))
+      .map(([key, count]) => {
+        const [date, recruiter, reason] = key.split("|")
+        return { date, recruiter, reason, count }
+      })
       .sort((a, b) => a.date.localeCompare(b.date) || b.count - a.count),
     bankAfval,
     afvalDelays: [...delays].map(([key, count]) => {
-      const [date, kind, days] = key.split("|")
-      return { date, kind: kind as "opgezegd" | "bank", days: Number(days), count }
+      const [date, recruiter, kind, days] = key.split("|")
+      return { date, recruiter, kind: kind as "opgezegd" | "bank", days: Number(days), count }
     }),
   }
 }
