@@ -116,12 +116,20 @@ export function buildPeriods(
 /** Netto per recruiter per calendar month for the first bonus, and how much more for every next one: 50, 60, 70, … */
 export const BONUS_FIRST = 50
 const BONUS_STEP = 10
+const BONUS_LAST = 100
 
-/** The highest bonus a month's netto has reached (null for none), and the next one to go for. */
-export function bonusStages(netto: number): { reached: number | null; next: number } {
+/** The highest bonus a month's netto has reached (null for none), and the next one to go for (null after the last). */
+export function bonusStages(netto: number): { reached: null; next: number } | { reached: number; next: number | null } {
   if (netto < BONUS_FIRST) return { reached: null, next: BONUS_FIRST }
-  const reached = BONUS_FIRST + Math.floor((netto - BONUS_FIRST) / BONUS_STEP) * BONUS_STEP
-  return { reached, next: reached + BONUS_STEP }
+  const reached = Math.min(BONUS_LAST, BONUS_FIRST + Math.floor((netto - BONUS_FIRST) / BONUS_STEP) * BONUS_STEP)
+  return { reached, next: reached < BONUS_LAST ? reached + BONUS_STEP : null }
+}
+
+/** Where a month's bar ends: the next bonus, but a month that is over cannot get there, so it is full once it has one. */
+export function bonusBarEnd(netto: number, running: boolean): number {
+  const { reached, next } = bonusStages(netto)
+  if (reached === null) return next
+  return running && next !== null ? next : reached
 }
 
 /** The afval that counts against netto. */

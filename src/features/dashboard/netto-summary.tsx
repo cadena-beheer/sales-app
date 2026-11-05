@@ -1,6 +1,8 @@
+import { Fragment } from "react"
 import { cn } from "@/lib/utils"
 import {
   addDays,
+  bonusBarEnd,
   bonusStages,
   COUNTED_DAYS,
   countedAfval,
@@ -26,20 +28,25 @@ type BonusMonth = {
 }
 
 /**
- * The numbers that matter side by side, netto the largest, with one bar: netto, then the afval that counts. For a month
- * the bar's outline ends at the next bonus, so what is empty is what is missing; afval beyond it is cut off. A week is
- * only part of that, so there the bar is the bruto number, and the line under it says which month the bonus is about.
+ * The numbers that matter side by side, netto the largest, with one bar. For a month the bar is netto alone and its
+ * outline ends at the next bonus, so it only fills up with netto and what is empty is what is missing. A week is only
+ * part of that, so there the bar is the bruto number, split in netto and the afval that counts, and the line under it
+ * says which month the bonus is about.
  */
 export function NettoSummary({ period, bonusMonth }: Props) {
   const netto = nettoOf(period)
   const afval = countedAfval(period)
   const bonus = bonusMonth ? bonusLine(bonusMonth) : null
-  const target = bonusMonth?.period.key === period.key ? bonusStages(netto).next : null
+  const target = bonusMonth?.period.key === period.key ? bonusBarEnd(netto, bonusMonth.running) : null
   const scale = target ?? Math.max(1, period.sold)
   const parts = [
     { count: netto, color: "bg-netto" },
-    { count: period.counted.opgezegd, color: "bg-opgezegd" },
-    { count: period.counted.bank, color: "bg-bankafval" },
+    ...(target === null
+      ? [
+          { count: period.counted.opgezegd, color: "bg-opgezegd" },
+          { count: period.counted.bank, color: "bg-bankafval" },
+        ]
+      : []),
   ].filter((part) => part.count > 0)
 
   return (
@@ -70,7 +77,12 @@ export function NettoSummary({ period, bonusMonth }: Props) {
       {bonus && (
         <p className="text-base text-muted-foreground">
           {target === null && `Bonus ${bonus.month}: `}
-          <span className="text-foreground tabular-nums">{bonus.value}</span> {bonus.note}
+          {bonus.parts.map((part, index) => (
+            <Fragment key={part.note}>
+              {index > 0 && ", "}
+              <span className="text-foreground tabular-nums">{part.value}</span> {part.note}
+            </Fragment>
+          ))}
         </p>
       )}
     </div>
@@ -105,21 +117,23 @@ function Kpi({ label, swatch, value, size, count }: KpiProps) {
   )
 }
 
-/** The number that matters for the bonus right now, and what it says. */
+/** The numbers that matter for the bonus right now, and what they say: what was reached, and what is still needed. */
 function bonusLine({ period, running, final }: BonusMonth) {
   const netto = nettoOf(period)
   const { reached, next } = bonusStages(netto)
   const month = periodTitle(period, "month").split(" ")[0]
   if (reached === null) {
+    return { month, parts: [{ value: next - netto, note: `nodig voor de ${next} netto bonus` }] }
+  }
+  if (running && next !== null) {
     return {
       month,
-      value: next - netto,
-      note: `nodig voor de ${next} netto bonus`,
+      parts: [
+        { value: reached, note: "netto bonus gehaald" },
+        { value: next - netto, note: `nodig voor de ${next} netto bonus` },
+      ],
     }
   }
-  if (running) {
-    return { month, value: next - netto, note: `nodig voor de ${next} netto bonus (${reached} gehaald)` }
-  }
   const finalOn = final ? "" : `, definitief na ${formatDay(addDays(period.end, COUNTED_DAYS))}`
-  return { month, value: reached, note: `netto bonus gehaald${finalOn}` }
+  return { month, parts: [{ value: reached, note: `netto bonus gehaald${finalOn}` }] }
 }

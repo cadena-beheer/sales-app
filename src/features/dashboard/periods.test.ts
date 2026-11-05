@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  bonusBarEnd,
   bonusStages,
   buildPeriods,
   countedAfval,
@@ -262,6 +263,26 @@ describe("bonusStages", () => {
     expect(bonusStages(50)).toEqual({ reached: 50, next: 60 })
     expect(bonusStages(59)).toEqual({ reached: 50, next: 60 })
     expect(bonusStages(70)).toEqual({ reached: 70, next: 80 })
+  })
+
+  it("stops at 100", () => {
+    expect(bonusStages(99)).toEqual({ reached: 90, next: 100 })
+    expect(bonusStages(100)).toEqual({ reached: 100, next: null })
+    expect(bonusStages(125)).toEqual({ reached: 100, next: null })
+  })
+})
+
+describe("bonusBarEnd", () => {
+  it("is the next bonus while the month runs", () => {
+    expect(bonusBarEnd(9, true)).toBe(50)
+    expect(bonusBarEnd(55, true)).toBe(60)
+    expect(bonusBarEnd(120, true)).toBe(100)
+  })
+
+  it("is the reached bonus once the month is over", () => {
+    expect(bonusBarEnd(36, false)).toBe(50)
+    expect(bonusBarEnd(55, false)).toBe(50)
+    expect(bonusBarEnd(120, false)).toBe(100)
   })
 })
 

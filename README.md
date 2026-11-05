@@ -133,8 +133,8 @@ or months (netto, opgezegd and bankafval as columns, netto's number inside and t
 the selected period by kind, by time after the sale and by reason, with "Verkeerd voorgelicht" always listed,
 and finally who it is (per werver, or the customers of one recruiter). Every percentage is a share of the bruto sales.
 The first card shows netto, the afval percentage with its count, and bruto, largest to smallest.
-When and why, and the customers, start with their first rows and a button to show all. For one recruiter the first card's bar also runs
-on to the next bonus of the calendar month (50 netto, then 60, 70, …), a line under it says how many are still needed, and the month chart has a line at 50. The page
+When and why, and the customers, start with their first rows and a button to show all. For one recruiter the first card's bar in the month view is netto alone, up
+to the next bonus of the calendar month (50 netto, then 60, 70, up to 100), a line under it says which bonus was reached and how many are still needed, and the month chart has a line at 50. The page
 opens on the month view, because the bonus is per month.
 
 **Afgevallen klanten.** Shown by street and house number. The endpoint has to send the address first
