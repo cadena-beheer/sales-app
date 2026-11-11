@@ -51,8 +51,8 @@ const FORM: Page = { view: "form" }
 
 export default function App() {
   const { session, loading, needsPassword, isInvite, passwordSet } = useSession()
-  const { page, depth, go, back } = useNavigation(() =>
-    import.meta.env.DEV && DEMO_MODE
+  const { page, depth, go, back, replace } = useNavigation(() =>
+    import.meta.env.DEV && DEMO_MODE && window.location.pathname === "/"
       ? { view: demoView(), map: {} }
       : pageFromUrl(window.location.pathname, window.location.search),
   )
@@ -95,6 +95,22 @@ export default function App() {
       // Only this device: a global sign-out would also end the recruiter's sessions on other devices.
       await supabase.auth.signOut({ scope: "local" })
     },
+  }
+
+  /** Picking a recruiter is a page of its own, so back returns to the team; the period only changes the address. */
+  function dashboard(profile: Profile | undefined) {
+    return (
+      <DashboardPage
+        profile={profile}
+        picked={viewedAs?.wervernr ?? null}
+        onPick={(wervernr) =>
+          go({ view: "dashboard", viewedAs: wervernr ? { wervernr, name: wervernr } : undefined, period: page.period })
+        }
+        period={page.period}
+        onPeriod={(period) => replace({ ...page, period })}
+        onBack={() => back(FORM)}
+      />
+    )
   }
 
   /** The map and the area pages, which lead to each other; null for any other view. */
@@ -174,14 +190,14 @@ export default function App() {
           />
         )
       }
-      return <DashboardPage profile={demoProfile} onBack={() => back(FORM)} />
+      return dashboard(demoProfile)
     }
     if (loading) return pageSpinner
     if (!session) return <LoginPage />
     if (needsPassword) {
       return <SetPasswordPage email={session.user.email ?? ""} isInvite={isInvite} onDone={passwordSet} />
     }
-    if (view === "dashboard") return <DashboardPage profile={profile} onBack={() => back(FORM)} />
+    if (view === "dashboard") return dashboard(profile)
     const areaView = areaViews(profile)
     if (areaView) return areaView
     if (view === "sales") {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { ArrowLeftIcon, ChevronDownIcon, ClockIcon } from "lucide-react"
 import { AppMenu } from "@/components/app-menu"
 import { HEADER_BUTTON_CLASS, PAGE_WIDTH, PageHeader } from "@/components/page-header"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Spinner } from "@/components/ui/spinner"
 import type { Profile } from "@/hooks/use-profile"
 import { getErrorMessage } from "@/lib/errors"
+import type { ResultsPeriod } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import { AfvalBreakdown } from "./afval-breakdown"
 import { CancellationList } from "./cancellation-list"
@@ -33,21 +34,30 @@ import {
 import { TeamTable, VERKEERD_VOORGELICHT } from "./team-table"
 import { useKpi } from "./use-kpi"
 
-type Props = { profile: Profile | undefined; onBack: () => void }
+type Props = {
+  profile: Profile | undefined
+  /** Admins: the recruiter whose numbers show, null for the whole team. Ignored for recruiters. */
+  picked: string | null
+  onPick: (wervernr: string | null) => void
+  period: ResultsPeriod | undefined
+  onPeriod: (period: ResultsPeriod) => void
+  onBack: () => void
+}
 
 /**
  * Results from ZMAdmin for one week or month at a time: netto first, then the last few periods, then what the afval
  * consists of and who it is. A recruiter sees their own; the sales manager sees the team and can open any recruiter.
+ * Whose numbers and which period live in the address (see lib/navigation), so back and a reload keep them.
  */
-export function DashboardPage({ profile, onBack }: Props) {
+export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBack }: Props) {
   const isAdmin = profile?.isAdmin ?? false
-  // Admins: null = the whole team. Recruiters always get their own numbers (the server enforces that too).
-  const [picked, setPicked] = useState<string | null>(null)
+  // Recruiters always get their own numbers (the server enforces that too).
   const wervernr = isAdmin ? picked : (profile?.wervernr ?? null)
   const team = useKpi(null, isAdmin)
   const kpi = useKpi(wervernr, profile !== undefined)
-  const [granularity, setGranularity] = useState<Granularity>("month")
-  const [selectedKey, setSelectedKey] = useState<string>()
+  const granularity: Granularity = period?.granularity ?? "month"
+  const selectedKey = period?.key
+  const setSelectedKey = (key: string | undefined) => onPeriod({ granularity, key })
 
   const data = kpi.data
   const periods = useMemo(
@@ -99,8 +109,7 @@ export function DashboardPage({ profile, onBack }: Props) {
 
   function changeGranularity(next: Granularity) {
     // Stay on the same moment: the week or month that contains the selected period's first day.
-    if (selected) setSelectedKey(periodKey(selected.start, next))
-    setGranularity(next)
+    onPeriod({ granularity: next, key: selected ? periodKey(selected.start, next) : undefined })
   }
 
   async function previous() {
@@ -127,11 +136,17 @@ export function DashboardPage({ profile, onBack }: Props) {
                 aria-label="Wiens cijfers"
                 className="max-w-[60vw] min-w-0 appearance-none truncate rounded-md bg-white/15 py-1.5 pr-8 pl-3 text-lg font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 value={picked ?? ""}
-                onChange={(event) => setPicked(event.target.value || null)}
+                onChange={(event) => onPick(event.target.value || null)}
               >
                 <option className="text-foreground" value="">
                   Hele team
                 </option>
+                {/* Opened from an address: the number, until the team's names have loaded. */}
+                {picked && !recruiters.some((r) => r.number === picked) && (
+                  <option className="text-foreground" value={picked}>
+                    {picked}
+                  </option>
+                )}
                 {recruiters.map((r) => (
                   <option className="text-foreground" key={r.number} value={r.number}>
                     {r.name} ({r.number})
@@ -266,15 +281,7 @@ export function DashboardPage({ profile, onBack }: Props) {
                     <CardDescription>Tik op een werver voor diens afgevallen klanten.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <TeamTable
-                      stats={data.stats}
-                      period={selected}
-                      showBank={showBank}
-                      onPick={(number) => {
-                        setPicked(number)
-                        window.scrollTo({ top: 0 })
-                      }}
-                    />
+                    <TeamTable stats={data.stats} period={selected} showBank={showBank} onPick={onPick} />
                   </CardContent>
                 </Card>
               ) : (

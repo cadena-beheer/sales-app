@@ -138,6 +138,11 @@ When and why, and the customers, start with their first rows and a button to sho
 to the next bonus of the calendar month (50 netto, then 60, 70, up to 100), a line under it says which bonus was reached and how many are still needed, and the month chart has a line at 50. The page
 opens on the month view, because the bonus is per month.
 
+**Addresses.** Every page has its own path, so the browser's back button moves between pages (`src/lib/navigation.ts`).
+On the results, picking a recruiter is a step of its own (`/resultaten?werver=0212BB`), so back returns to the team;
+the period only changes the address (`per=week`, `periode=2026-W41` or `periode=2026-10`), so a reload or a shared
+link keeps it but back skips it. A recruiter's own results ignore `werver`.
+
 **Afgevallen klanten.** Shown by street and house number, with a button to Street View
 (`handoff/zmsuite-afval-address.md`); a row without an address shows the name and no button. Google needs a location
 for Street View, so the phone asks PDOK for it for the rows it shows; without an answer the button searches the address
