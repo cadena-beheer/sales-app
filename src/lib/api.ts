@@ -10,6 +10,7 @@ import type { AdminGroup, AdminUser } from "@shared/admin-types"
 import type { ExtractedFields, FormInput } from "@shared/form-schema"
 import { POSTCODE_REGEX, normalizePostcode } from "@shared/form-schema"
 import type { KpiRequest, KpiResponse } from "@shared/kpi"
+import type { SalesIssuesRequest, SalesIssuesResponse } from "@shared/sales-issues"
 import type { SalesMapRequest } from "@shared/sales-map"
 import type { SalesMapResponse } from "@shared/sales-map-view"
 import type { SalesOpportunitiesRequest, SalesOpportunitiesResponse } from "@shared/sales-opportunities"
@@ -30,6 +31,7 @@ import {
   type PostcodePlace,
   type Street,
 } from "@/features/areas/doors"
+import type { MarketingAction, NewMarketingAction } from "@/features/marketing/marketing-actions"
 import { homeDoor, type MonteurHome, type NewMonteurHome } from "@/features/monteurs/monteur-homes"
 import { IS_TEST_DEPLOYMENT, TEST_DEPLOYMENT_HEADER } from "@/lib/deployment"
 import { ApiError, AuthError, NetworkError } from "@/lib/errors"
@@ -658,6 +660,63 @@ export async function deleteTickedDoors(ids: string[]): Promise<void> {
       .eq("outcome", "walked")
       .in("id", ids.slice(i, i + TICK_CHUNK))
     if (error) throw new ApiError("Terugzetten lukte niet", 500)
+  }
+}
+
+// --- Storingen and marketing on the map ------------------------------------------------------------
+
+/** Admins only: where storingen were solved, per street. */
+export async function getSalesIssues(request: SalesIssuesRequest): Promise<SalesIssuesResponse> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoSalesIssues } = await import("@shared/sales-issues-demo")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    return { demo: true, ...demoSalesIssues(request.from, request.to) }
+  }
+  return invoke<SalesIssuesResponse>("sales-issues", { ...request })
+}
+
+/** Admins only (row-level security): the marketing actions, newest first. */
+export async function listMarketingActions(): Promise<MarketingAction[]> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoMarketingActions } = await import("@/features/marketing/demo-marketing")
+    return demoMarketingActions()
+  }
+  const { data, error } = await supabase
+    .from("marketing_actions")
+    .select("id, kind, done_on, postcodes")
+    .order("done_on", { ascending: false })
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingacties konden niet worden geladen", 500)
+  }
+  return data.map((row) => ({ id: row.id, kind: row.kind, doneOn: row.done_on, postcodes: row.postcodes }))
+}
+
+/** Admins only (row-level security). */
+export async function addMarketingAction(action: NewMarketingAction): Promise<void> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoAddMarketingAction } = await import("@/features/marketing/demo-marketing")
+    return demoAddMarketingAction(action)
+  }
+  const { error } = await supabase
+    .from("marketing_actions")
+    .insert({ kind: action.kind, done_on: action.doneOn, postcodes: action.postcodes })
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingactie kon niet worden opgeslagen", 500)
+  }
+}
+
+/** Admins only (row-level security). */
+export async function deleteMarketingAction(id: string): Promise<void> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoDeleteMarketingAction } = await import("@/features/marketing/demo-marketing")
+    return demoDeleteMarketingAction(id)
+  }
+  const { error } = await supabase.from("marketing_actions").delete().eq("id", id)
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingactie kon niet worden verwijderd", 500)
   }
 }
 

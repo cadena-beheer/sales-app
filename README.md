@@ -172,6 +172,10 @@ computed in the backend; the app only draws what it receives.
 pencil next to the "Monteurs" button. The location comes from PDOK when the address is entered. These are home
 addresses: row level security on `monteur_homes` lets only admins read or change them.
 
+**Storingen and marketing.** Also for admins on those views. "Storingen" shows where storingen were solved in the last
+year, per street and never per address (`sales-issues` function, `…/Sales/2026.1/Issues`; demo numbers until that
+endpoint exists). "Marketing" tints the areas of actions an admin entered with the pencil (`marketing_actions`).
+
 **Zooming in.** From zoom 11 the map shows PC5 areas, from zoom 13 the streets (PC6), each asked for per view
 (`…/Map/Pc5`, `…/Map/Pc6`, `…/Opportunities/Pc5`, `…/Opportunities/Pc6` with `bbox`). A PC5 is ranked by its
 best street like a PC4; a street by itself on the national street scale. The answers hold only postcodes and what
