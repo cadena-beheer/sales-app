@@ -121,7 +121,8 @@ code); only admins may pick another recruiter or the whole team. "Opzeggingen bi
 cancellation entered in ZMAdmin; periods ending less than four weeks before that are hatched as not complete. The
 app loads a year at a time going back ("Eerder"). Without `STATS_API_KEY` the function returns
 made-up numbers and the page says so. In development, open `http://localhost:5173/?demo` (sales manager) or
-`?demo=werver` to see the dashboard with demo data without logging in, and `?demo&beheer` for the admin page.
+`?demo=werver` to see the dashboard with demo data without logging in, `?demo&beheer` for the admin page and
+`?demo&formulier` for the form, where any photo gives a scan with a week-old date.
 
 **Bankafval.** A sale that was not cancelled but never paid. `Stats` sends it per sale day (`bankAfval`), and for one
 recruiter the customers behind it; it counts in Afval and not in Netto. Until the endpoint sends it, the page looks as

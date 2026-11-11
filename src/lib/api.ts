@@ -77,17 +77,20 @@ async function recoverSession(): Promise<void> {
 
 export type PostcodeResult = { found: true; straat: string; plaats: string } | { found: false }
 
-export function lookupPostcode(postcode: string, huisnummer: string, signal?: AbortSignal) {
+export async function lookupPostcode(postcode: string, huisnummer: string, signal?: AbortSignal) {
+  if (import.meta.env.DEV && DEMO_MODE) return { found: true, straat: "Voorbeeldstraat", plaats: "Amersfoort" } as const
   return invoke<PostcodeResult>("postcode-lookup", { postcode, huisnummer }, signal)
 }
 
 export type IbanResult = { valid: boolean; iban: string; bank?: string | null; bic?: string | null }
 
-export function validateIban(iban: string, signal?: AbortSignal) {
+export async function validateIban(iban: string, signal?: AbortSignal) {
+  if (import.meta.env.DEV && DEMO_MODE) return { valid: true, iban, bank: "Demo Bank" }
   return invoke<IbanResult>("iban-validate", { iban }, signal)
 }
 
-export function submitForm(values: FormInput) {
+export async function submitForm(values: FormInput) {
+  if (import.meta.env.DEV && DEMO_MODE) return { ok: true as const, rowId: values.rowId, duplicate: false }
   return invoke<{ ok: true; rowId: string; duplicate: boolean }>("submit-form", { ...values })
 }
 
@@ -108,6 +111,14 @@ export async function extractFromPhoto(
   userId: string,
   photo: File,
 ): Promise<{ fields: ExtractedFields; mock: boolean; path: string }> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { addDays } = await import("@/features/dashboard/periods")
+    const { today } = await import("@/features/sales-form/form-defaults")
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    // A week-old paper form, so the date question shows; any photo will do.
+    const fields = { datum: addDays(today(), -6), postcode: "3811AB", huisnummer: "12", klantnummer: "7000123" }
+    return { fields, mock: true, path: "" }
+  }
   const extension = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : "jpg"
   const path = `${userId}/${crypto.randomUUID()}.${extension}`
   const { error } = await supabase.storage.from(SCANS_BUCKET).upload(path, photo, { contentType: photo.type })

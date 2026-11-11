@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { EXTRACTABLE_FIELDS, type ExtractableField, type ExtractedFields, type FormInput } from "@shared/form-schema"
 import { extractFromPhoto } from "@/lib/api"
 import { getErrorMessage } from "@/lib/errors"
+import { scannedDateDiffers } from "./contract-date"
 import type { SalesFormApi } from "./form-types"
 import { normalizeNaam, type NaamCorrection } from "./naam"
 import { prepareScanImage } from "./scan-image"
@@ -27,11 +28,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  * Camera scan: uploads the photo, lets the backend read it with Claude and types the result into the form,
  * top to bottom. `phase` drives the blocking overlay: "reading" shows a spinner, "filling" only blocks input.
  * The scanned name gets the same capitalization fix as a typed one; `naamCorrection` lets the field offer undo.
- * The photo is kept with the form (`scanPath`) and sent with it; a new scan replaces it.
+ * The photo is kept with the form (`scanPath`) and sent with it; a new scan replaces it. A date on the form that is
+ * not today is put to the recruiter (`scannedDate`) right away, while the paper is still in hand.
  */
 export function useScanFill(form: SalesFormApi, userId: string) {
   const [phase, setPhase] = useState<"reading" | "filling" | null>(null)
   const [naamCorrection, setNaamCorrection] = useState<NaamCorrection | null>(null)
+  const [scannedDate, setScannedDate] = useState<string | null>(null)
 
   async function scan(photo: File) {
     setPhase("reading")
@@ -41,6 +44,7 @@ export function useScanFill(form: SalesFormApi, userId: string) {
       form.setValue("scanPath", path, { shouldDirty: true })
       setPhase("filling")
       await typeIntoForm(fields)
+      if (scannedDateDiffers(fields.datum)) setScannedDate(fields.datum)
       if (mock) toast.info("Demo: voorbeeldgegevens ingevuld (Claude is nog niet gekoppeld)")
       else toast.success("Formulier ingevuld — controleer de gegevens")
     } catch (error) {
@@ -87,7 +91,13 @@ export function useScanFill(form: SalesFormApi, userId: string) {
     form.setValue(name, value as FormInput[typeof name], { shouldDirty: true })
   }
 
-  return { phase, naamCorrection, scan }
+  /** The recruiter's answer: the date stays as read, or the form gets `date` instead. */
+  function resolveScannedDate(date?: string) {
+    if (date) form.setValue("datum", date, { shouldDirty: true, shouldValidate: true })
+    setScannedDate(null)
+  }
+
+  return { phase, naamCorrection, scan, scannedDate, resolveScannedDate }
 }
 
 function highlight(name: ExtractableField) {

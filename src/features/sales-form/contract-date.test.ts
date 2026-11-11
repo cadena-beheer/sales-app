@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { addDays } from "../dashboard/periods"
-import { isFutureContractDate, isOldContractDate, salesFormSchema } from "./contract-date"
+import { isFutureContractDate, isOldContractDate, scannedDateDiffers, salesFormSchema } from "./contract-date"
 import { createEmptyForm, today } from "./form-defaults"
+
+describe("scannedDateDiffers", () => {
+  it("asks when the form holds another date, also yesterday's or a future one", () => {
+    expect(scannedDateDiffers("2026-11-02", "2026-11-03")).toBe(true)
+    expect(scannedDateDiffers("2026-11-04", "2026-11-03")).toBe(true)
+  })
+
+  it("does not ask for today, or when no date could be read", () => {
+    expect(scannedDateDiffers("2026-11-03", "2026-11-03")).toBe(false)
+    expect(scannedDateDiffers(undefined, "2026-11-03")).toBe(false)
+  })
+})
 
 describe("isOldContractDate", () => {
   it.each(["2026-10-21", "2026-10-14", "2026-10-25"])("accepts %s without asking", (datum) => {

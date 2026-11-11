@@ -14,11 +14,12 @@ import type { OutboxItem } from "../outbox/outbox-store"
 import { useOutbox } from "../outbox/use-outbox"
 import { salesFormSchema } from "./contract-date"
 import { clearDraft } from "./draft-store"
-import { createEmptyForm } from "./form-defaults"
+import { createEmptyForm, today } from "./form-defaults"
 import { FormHeader } from "./form-header"
 import type { SalesFormApi } from "./form-types"
 import { SalesForm } from "./sales-form"
 import { ScanOverlay } from "./scan-overlay"
+import { ScannedDateDialog } from "./scanned-date-dialog"
 import { useDraft } from "./use-draft"
 import { useScanFill } from "./use-scan-fill"
 
@@ -140,6 +141,14 @@ export function FormPage(props: Props) {
         onDelete={outbox.remove}
       />
       <ScanOverlay phase={scanFill.phase} />
+      {scanFill.scannedDate && (
+        <ScannedDateDialog
+          date={scanFill.scannedDate}
+          now={today()}
+          onKeep={() => scanFill.resolveScannedDate()}
+          onUseToday={() => scanFill.resolveScannedDate(today())}
+        />
+      )}
     </div>
   )
 }
