@@ -8,9 +8,6 @@ import { COUNTED_DAYS, daysBetween, formatDay } from "./periods"
 import { ShowMore } from "./show-more"
 import { VERKEERD_VOORGELICHT } from "./team-table"
 
-/** Off until the endpoint sends addresses (handoff/zmsuite-afval-address.md). */
-const SHOW_STREET_VIEW: boolean = false
-
 type Props = {
   items: SalesStatsCancellation[]
   bank: SalesStatsBankAfval[]
@@ -86,7 +83,7 @@ export function CancellationList({ items, bank }: Props) {
                 <p className="text-sm text-muted-foreground">{fallenOn(line.on, line.soldOn)}</p>
               </div>
             )}
-            {SHOW_STREET_VIEW && line.street && <StreetViewLink line={line} />}
+            {line.street && <StreetViewLink line={line} />}
           </li>
         )
       })}

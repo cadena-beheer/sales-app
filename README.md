@@ -137,10 +137,10 @@ When and why, and the customers, start with their first rows and a button to sho
 to the next bonus of the calendar month (50 netto, then 60, 70, up to 100), a line under it says which bonus was reached and how many are still needed, and the month chart has a line at 50. The page
 opens on the month view, because the bonus is per month.
 
-**Afgevallen klanten.** Shown by street and house number. The endpoint has to send the address first
-(`handoff/zmsuite-afval-address.md`); until then a line shows the name. A button to Street View is ready but hidden
-(`SHOW_STREET_VIEW`) until then. Google needs a location for that, so the phone asks PDOK for it for the rows it shows;
-without an answer the button searches the address in Google Maps.
+**Afgevallen klanten.** Shown by street and house number, with a button to Street View
+(`handoff/zmsuite-afval-address.md`); a row without an address shows the name and no button. Google needs a location
+for Street View, so the phone asks PDOK for it for the rows it shows; without an answer the button searches the address
+in Google Maps.
 
 **Netto.** Bruto minus the afval within 14 days of the sale (`COUNTED_DAYS`), because only that counts for the bonus; the
 first card, the chart and the team table's Netto use it. "Alle afval" shows everything, later afval included. A month's

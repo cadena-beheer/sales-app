@@ -1,9 +1,15 @@
 # Handoff: address of fallen-away customers in the Contracts API (ZMSuite)
 
 The dashboard's "Afgevallen klanten" shows street and house number with a button to Street View, instead of the
-customer's name. `GET /Sales/2026.1/Stats` does not send the address yet. Nothing is changed in ZMSuite. Until it is, the
-app shows the name and no button; the fields are optional in `salesStatsSchema`, so the order of deploying does not
-matter.
+customer's name. `GET /Sales/2026.1/Stats` does not send the address yet.
+
+The code is written on ZMSuite branch `jan/feature/sales-stats-address`, in the worktree `~/workspace/zm/ZMSuite-address`,
+from `origin/main` as last fetched here (`55875332`). It is committed there (`130481f5`), not pushed or deployed. It has not been built or
+run: on the Mac the NuGet feed answers 401 and a project needs the Windows SDK. On Windows, build `Contracts.api` and run
+`SalesStatsSnapshotTests` and `SalesStatsDatabaseTests` (the last needs LocalDB).
+
+The app shows the button on every row with a street; the fields are optional in `salesStatsSchema`, so until the
+endpoint sends them a row shows the name and no button.
 
 ## What to add
 
