@@ -10,6 +10,7 @@ import {
   MapPinnedIcon,
   MenuIcon,
   RefreshCwIcon,
+  SparklesIcon,
   UsersIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
@@ -105,6 +106,9 @@ export function AppMenu() {
               : page("areas", <MapPinnedIcon />, "Mijn gebieden"))}
           {admin && page("admin", <UsersIcon />, "Beheer wervers")}
           <DropdownMenuSeparator />
+          <DropdownMenuItem className={MENU_ITEM_CLASS} onClick={menu.whatsNew}>
+            <SparklesIcon /> Wat is er nieuw
+          </DropdownMenuItem>
           <DropdownMenuItem className={MENU_ITEM_CLASS} disabled={!online} onClick={menu.changePassword}>
             <KeyRoundIcon /> Wachtwoord wijzigen
           </DropdownMenuItem>

@@ -18,6 +18,8 @@ import { loadOutbox } from "@/features/outbox/outbox-store"
 import { clearDraft } from "@/features/sales-form/draft-store"
 import { FormPage } from "@/features/sales-form/form-page"
 import { SalesListPage } from "@/features/sales-list/sales-list-page"
+import { useWhatsNew } from "@/features/whats-new/use-whats-new"
+import { WhatsNewDialog } from "@/features/whats-new/whats-new-dialog"
 import { useOnline } from "@/hooks/use-online"
 import { useProfile, type Profile } from "@/hooks/use-profile"
 import { DEMO_MODE } from "@/lib/api"
@@ -64,6 +66,8 @@ export default function App() {
   const online = useOnline()
   const [outboxOpen, setOutboxOpen] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const demo = import.meta.env.DEV && DEMO_MODE !== null
+  const whatsNew = useWhatsNew(demo ? DEMO_MODE === "admin" : (profile?.isAdmin ?? false))
   // The same query the form's outbox keeps current; IndexedDB is local, so it also runs offline.
   const { data: queued = [] } = useQuery({
     queryKey: ["outbox", userId],
@@ -90,6 +94,7 @@ export default function App() {
       setOutboxOpen(true)
     },
     changePassword: () => setChangingPassword(true),
+    whatsNew: whatsNew.openAll,
     signOut: async () => {
       if (userId) await clearDraft(userId)
       // Only this device: a global sign-out would also end the recruiter's sessions on other devices.
@@ -228,6 +233,10 @@ export default function App() {
       <AppMenuContext value={menu}>{content()}</AppMenuContext>
       {changingPassword && session && (
         <ChangePasswordDialog email={session.user.email ?? ""} onClose={() => setChangingPassword(false)} />
+      )}
+      {/* Only once someone is in the app: not over the login or set-password page. */}
+      {whatsNew.releases && (demo || (session && !needsPassword)) && (
+        <WhatsNewDialog releases={whatsNew.releases} onClose={whatsNew.close} />
       )}
       <Toaster position="top-center" richColors />
     </>
