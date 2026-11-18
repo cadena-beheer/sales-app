@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { requireUser } from "../_shared/auth.ts"
-import { parseSubmittedForm } from "../_shared/form-schema.ts"
+import { needsPhoto, parseSubmittedForm } from "../_shared/form-schema.ts"
 import { appendSheetRow, isSheetsConfigured } from "../_shared/google-sheets.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
 import { isOnboardingConfigured, sendToOnboarding } from "../_shared/onboarding.ts"
@@ -18,6 +18,10 @@ serve(async (req) => {
   const parsed = parseSubmittedForm(await req.json())
   if (!parsed.success) {
     return json({ error: "Formulier bevat fouten", issues: parsed.error.issues }, 400)
+  }
+  // Every sale comes with a photo of its paper contract; earlier ones may still wait in an older app's outbox.
+  if (!parsed.data.scanPath && needsPhoto(parsed.data.datum, isTestRequest(req))) {
+    throw new HttpError(422, "Er hoort een foto van het contract bij dit formulier. Open het en maak de foto.")
   }
   // Onboarding sends the scan to ZMAdmin with the service role, so it must be the caller's own photo.
   if (parsed.data.scanPath && !isOwnScanPath(parsed.data.scanPath, user.id)) {

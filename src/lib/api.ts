@@ -7,7 +7,7 @@ import {
   isAuthRetryableFetchError,
 } from "@supabase/supabase-js"
 import type { AdminGroup, AdminUser } from "@shared/admin-types"
-import type { ExtractedFields, FormInput } from "@shared/form-schema"
+import type { FormInput, ScanResponse } from "@shared/form-schema"
 import { POSTCODE_REGEX, normalizePostcode } from "@shared/form-schema"
 import type { KpiRequest, KpiResponse } from "@shared/kpi"
 import type { SalesIssuesRequest, SalesIssuesResponse } from "@shared/sales-issues"
@@ -106,28 +106,39 @@ export async function listRecruiters(): Promise<Recruiter[]> {
 }
 
 /**
- * Uploads a scan photo and has it read. The photo stays in storage: its `path` goes with the form, so onboarding
- * can file it with the customer in ZMAdmin.
+ * Puts a contract photo in the scans bucket, in the user's own folder, and returns its path. Fails as retryable
+ * (NetworkError) when storage could not be reached, so a form waiting for it stays in the outbox.
  */
-export async function extractFromPhoto(
-  userId: string,
-  photo: File,
-): Promise<{ fields: ExtractedFields; mock: boolean; path: string }> {
+export async function uploadScan(userId: string, photo: Blob): Promise<string> {
+  if (import.meta.env.DEV && DEMO_MODE) return ""
+  const extension = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : "jpg"
+  const path = `${userId}/${crypto.randomUUID()}.${extension}`
+  const { error } = await supabase.storage
+    .from(SCANS_BUCKET)
+    .upload(path, photo, { contentType: photo.type || "image/jpeg" })
+  if (!error) return path
+  // An answer from storage has a status; without one the request never got there.
+  if (!navigator.onLine || !("status" in error)) throw new NetworkError("Geen verbinding met de server")
+  throw new ApiError("Uploaden van de foto is mislukt", 500)
+}
+
+/**
+ * Uploads the original photo and has Claude read it: the fields, whether the printed text is readable, and where the
+ * sheet is. The original stays in storage until SCAN_RETENTION_DAYS; the copy that goes with the form is uploaded
+ * separately (see enhanceScan).
+ */
+export async function readScan(userId: string, photo: Blob): Promise<ScanResponse> {
   if (import.meta.env.DEV && DEMO_MODE) {
     const { addDays } = await import("@/features/dashboard/periods")
     const { today } = await import("@/features/sales-form/form-defaults")
     await new Promise((resolve) => setTimeout(resolve, 600))
-    // A week-old paper form, so the date question shows; any photo will do.
+    // A week-old paper form, so the date question shows; any photo will do. `?demo&onleesbaar` turns it down.
     const fields = { datum: addDays(today(), -6), postcode: "3811AB", huisnummer: "12", klantnummer: "7000123" }
-    return { fields, mock: true, path: "" }
+    const problem = new URLSearchParams(window.location.search).has("onleesbaar") ? "te_donker" : null
+    return { fields, mock: true, problem, corners: null }
   }
-  const extension = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : "jpg"
-  const path = `${userId}/${crypto.randomUUID()}.${extension}`
-  const { error } = await supabase.storage.from(SCANS_BUCKET).upload(path, photo, { contentType: photo.type })
-  if (error) throw new ApiError("Uploaden van de foto is mislukt", 500)
-
-  const result = await invoke<{ fields: ExtractedFields; mock: boolean }>("extract-form", { path })
-  return { ...result, path }
+  const path = await uploadScan(userId, photo)
+  return invoke<ScanResponse>("extract-form", { path })
 }
 
 // --- Dashboard ----------------------------------------------------------------------------------

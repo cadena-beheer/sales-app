@@ -226,6 +226,55 @@ export type ExtractableField = (typeof EXTRACTABLE_FIELDS)[number]
 /** Extraction result as sent to the app: only the fields that were found, already normalized. */
 export type ExtractedFields = { [K in ExtractableField]?: Exclude<Extraction[K], ""> }
 
+/** Why a photo cannot be read reliably, as Claude judges it from the printed text of the form. */
+export const SCAN_PROBLEMS = ["te_donker", "te_licht", "onscherp", "afgesneden", "geen_formulier"] as const
+
+export type ScanProblem = (typeof SCAN_PROBLEMS)[number]
+
+// No bounds: structured outputs do not support them. The function clamps the corners to the photo.
+const scanPoint = z.strictObject({ x: z.number(), y: z.number() })
+
+/**
+ * Claude's whole answer for a photo: first whether the printed text can be read, then where the sheet of paper is
+ * (for the scanner-style copy), then the form itself.
+ */
+export const scanReadingSchema = z.strictObject({
+  leesbaarheid: z.enum(["goed", ...SCAN_PROBLEMS]),
+  hoeken: z
+    .strictObject({ linksboven: scanPoint, rechtsboven: scanPoint, rechtsonder: scanPoint, linksonder: scanPoint })
+    .nullable(),
+  formulier: extractionSchema,
+})
+
+export type ScanReading = z.infer<typeof scanReadingSchema>
+
+/** A point on the photo as a fraction of its width (x) and height (y), 0..1 from the top left. */
+export type ScanPoint = { x: number; y: number }
+
+/** The corners of the sheet: top left, top right, bottom right, bottom left, as the form is read upright. */
+export type ScanCorners = [ScanPoint, ScanPoint, ScanPoint, ScanPoint]
+
+/** What extract-form answers: the fields read, and whether the photo is good enough and where the paper is. */
+export type ScanResponse = {
+  fields: ExtractedFields
+  mock: boolean
+  /** null when the printed text is readable. */
+  problem: ScanProblem | null
+  corners: ScanCorners | null
+}
+
+/**
+ * From this contract date on, a form must come with a photo of the paper contract; null while the app that starts
+ * every form with the photo is only on the test deployment, which always needs one. Set it a few days after that app
+ * reaches production: earlier forms may still wait in an outbox of an app version that did not ask for a photo.
+ */
+export const PHOTO_REQUIRED_FROM: string | null = null
+
+/** Whether submit-form refuses this form without a photo. */
+export function needsPhoto(datum: string, test: boolean): boolean {
+  return test || (PHOTO_REQUIRED_FROM !== null && datum >= PHOTO_REQUIRED_FROM)
+}
+
 /** One row in the Google Sheet, keyed by the sheet's column headers. */
 export type SheetRow = {
   RowId: string

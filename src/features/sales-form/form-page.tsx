@@ -21,6 +21,11 @@ import { SalesForm } from "./sales-form"
 import { ScanOverlay } from "./scan-overlay"
 import { ScannedDateDialog } from "./scanned-date-dialog"
 import { useDraft } from "./use-draft"
+import { CaptureScreen } from "./capture-screen"
+import { PhotoCard } from "./photo-card"
+import { deleteScanPhoto } from "./scan-photo-store"
+import { ScanRejectedDialog } from "./scan-rejected-dialog"
+import { useContractPhoto } from "./use-contract-photo"
 import { useScanFill } from "./use-scan-fill"
 
 type Props = {
@@ -36,7 +41,10 @@ type Props = {
   onBack?: () => void
 }
 
-/** Main page after login: header, the sales form, the outbox dialog and the scan overlay. */
+/**
+ * Main page after login: header, the sales form, the outbox dialog and the scan overlay. A form without a contract
+ * photo shows the camera screen instead of the fields: every sale starts with the photo.
+ */
 export function FormPage(props: Props) {
   const { session, outboxOpen, onOutboxOpenChange: setOutboxOpen, onOpenSales, soldAt, onSoldAtFilled, onBack } = props
   const userId = session.user.id
@@ -50,26 +58,36 @@ export function FormPage(props: Props) {
   })
   const { ready } = useDraft(form, userId)
   useSoldAt(form, ready, soldAt, onSoldAtFilled)
-  const scanFill = useScanFill(form, userId)
-  const [submitting, setSubmitting] = useState(false)
-  const photoInput = useRef<HTMLInputElement>(null)
   // A new rowId means a new form; used as key so the form's local state (e.g. manual address) resets too.
   const rowId = useWatch({ control: form.control, name: "rowId" })
+  const scanPath = useWatch({ control: form.control, name: "scanPath" })
+  const contractPhoto = useContractPhoto(rowId)
+  const scanFill = useScanFill(form, userId, contractPhoto.save)
+  const [submitting, setSubmitting] = useState(false)
+  const photoInput = useRef<HTMLInputElement>(null)
+  // A draft from an app version before the photo was kept on the phone only has its path.
+  const hasPhoto = contractPhoto.photo !== null || scanPath !== ""
 
-  async function startNewForm() {
+  /** Starts over. The photo of the old form goes too, unless the form still needs it in the outbox. */
+  async function startNewForm({ keepPhoto = false } = {}) {
+    if (!keepPhoto) await deleteScanPhoto(form.getValues("rowId"))
     await clearDraft(userId)
     form.reset(createEmptyForm())
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   async function handleSubmit(values: FormValues) {
+    if (!hasPhoto) {
+      toast.error("Maak eerst een foto van het contract")
+      return
+    }
     setSubmitting(true)
     try {
       const result = await outbox.submit(values)
       if (result === "sent") {
         toast.success("Formulier verstuurd", { action: { label: "Bekijk mijn verkopen", onClick: onOpenSales } })
       } else toast.info("Offline opgeslagen — wordt automatisch verstuurd zodra je weer online bent")
-      await startNewForm()
+      await startNewForm({ keepPhoto: result === "queued" })
     } catch (error) {
       toast.error(getErrorMessage(error, "Versturen mislukt"))
     } finally {
@@ -83,6 +101,11 @@ export function FormPage(props: Props) {
   }
 
   /** Moves a queued form back into the editor, e.g. to fix a rejected field. */
+  function openCamera() {
+    scanFill.dismissRejection()
+    photoInput.current?.click()
+  }
+
   async function handleEditQueued(item: OutboxItem) {
     await outbox.remove(item.values.rowId)
     form.reset(item.values)
@@ -99,12 +122,7 @@ export function FormPage(props: Props) {
 
   return (
     <div className="min-h-svh bg-muted">
-      <FormHeader
-        online={online}
-        scanDisabled={!online || scanFill.phase !== null}
-        onScan={() => photoInput.current?.click()}
-        onBack={onBack}
-      />
+      <FormHeader scanDisabled={scanFill.phase !== null} onScan={openCamera} onBack={onBack} />
       <input
         ref={photoInput}
         type="file"
@@ -114,13 +132,23 @@ export function FormPage(props: Props) {
         onChange={handlePhotoSelected}
       />
 
-      {ready ? (
+      {ready && contractPhoto.loaded && !hasPhoto ? (
+        <CaptureScreen online={online} disabled={scanFill.phase !== null} onCapture={openCamera} />
+      ) : ready && contractPhoto.loaded ? (
         <SalesForm
           key={rowId}
           form={form}
           profile={profile}
           submitting={submitting}
           naamCorrection={scanFill.naamCorrection}
+          photo={
+            <PhotoCard
+              url={contractPhoto.url}
+              uploaded={scanPath !== ""}
+              disabled={scanFill.phase !== null}
+              onRetake={openCamera}
+            />
+          }
           onSubmit={handleSubmit}
           onDiscard={handleDiscard}
         />
@@ -138,9 +166,20 @@ export function FormPage(props: Props) {
         syncing={outbox.syncing}
         onSync={outbox.flush}
         onEdit={handleEditQueued}
-        onDelete={outbox.remove}
+        onDelete={async (queuedRowId) => {
+          await outbox.remove(queuedRowId)
+          await deleteScanPhoto(queuedRowId)
+        }}
       />
       <ScanOverlay phase={scanFill.phase} />
+      {scanFill.rejection && (
+        <ScanRejectedDialog
+          rejection={scanFill.rejection}
+          onRetake={openCamera}
+          onUseAnyway={() => void scanFill.acceptAnyway()}
+          onCancel={scanFill.dismissRejection}
+        />
+      )}
       {scanFill.scannedDate && (
         <ScannedDateDialog
           date={scanFill.scannedDate}

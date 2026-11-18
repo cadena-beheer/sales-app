@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Extraction } from "./form-schema"
-import { toScanResult } from "./scan-result"
+import { toScanCorners, toScanResult } from "./scan-result"
 
 // What Claude might answer for a fully filled-in paper form.
 const claudeAnswer: Extraction = {
@@ -59,5 +59,30 @@ describe("toScanResult", () => {
     expect(fields).not.toHaveProperty("klantnummer")
     expect(fields).not.toHaveProperty("datum")
     expect(fields).not.toHaveProperty("landcode2")
+  })
+})
+
+describe("toScanCorners", () => {
+  const point = (x: number, y: number) => ({ x, y })
+
+  it("keeps fractions in the order top left, top right, bottom right, bottom left, clamped to the photo", () => {
+    const hoeken = {
+      linksboven: point(-0.05, 0.1),
+      rechtsboven: point(0.9, 0.08),
+      rechtsonder: point(0.92, 1.04),
+      linksonder: point(0.06, 0.95),
+    }
+    expect(toScanCorners(hoeken)).toEqual([point(0, 0.1), point(0.9, 0.08), point(0.92, 1), point(0.06, 0.95)])
+  })
+
+  it("is null without corners or with pixels instead of fractions", () => {
+    expect(toScanCorners(null)).toBeNull()
+    const pixels = {
+      linksboven: point(40, 60),
+      rechtsboven: point(1900, 50),
+      rechtsonder: point(1880, 1400),
+      linksonder: point(30, 1390),
+    }
+    expect(toScanCorners(pixels)).toBeNull()
   })
 })
