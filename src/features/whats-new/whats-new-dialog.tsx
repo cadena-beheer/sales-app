@@ -13,18 +13,21 @@ import type { Release } from "./changelog"
 
 type Props = { releases: Release[]; onClose: () => void }
 
-/** What changed in the app, newest first, in a few plain sentences per change. */
+/**
+ * What changed in the app, newest first, in a few plain sentences per change. Only the changes scroll, and only up
+ * and down: the title and "Begrepen" stay in view.
+ */
 export function WhatsNewDialog({ releases, onClose }: Props) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85svh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85svh] flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <SparklesIcon className="size-5 text-primary" /> Wat is er nieuw
           </DialogTitle>
           <DialogDescription>De app is bijgewerkt. Dit is er veranderd.</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-5">
+        <div className="-mx-4 flex min-h-0 flex-1 touch-pan-y flex-col gap-5 overflow-x-hidden overflow-y-auto overscroll-contain px-4">
           {releases.map((release) => (
             <section key={release.id} className="flex flex-col gap-3">
               {releases.length > 1 && (
@@ -43,7 +46,7 @@ export function WhatsNewDialog({ releases, onClose }: Props) {
             </section>
           ))}
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button className="h-12 w-full sm:w-auto" onClick={onClose}>
             Begrepen
           </Button>
