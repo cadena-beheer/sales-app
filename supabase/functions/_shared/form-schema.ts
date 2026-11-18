@@ -267,18 +267,6 @@ export type ScanResponse = {
   corners: ScanCorners | null
 }
 
-/**
- * From this contract date on, a form must come with a photo of the paper contract; null while the app that starts
- * every form with the photo is only on the test deployment, which always needs one. Set it a few days after that app
- * reaches production: earlier forms may still wait in an outbox of an app version that did not ask for a photo.
- */
-export const PHOTO_REQUIRED_FROM: string | null = null
-
-/** Whether submit-form refuses this form without a photo. */
-export function needsPhoto(datum: string, test: boolean): boolean {
-  return test || (PHOTO_REQUIRED_FROM !== null && datum >= PHOTO_REQUIRED_FROM)
-}
-
 /** One row in the Google Sheet, keyed by the sheet's column headers. */
 export type SheetRow = {
   RowId: string
