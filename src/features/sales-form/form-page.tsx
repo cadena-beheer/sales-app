@@ -122,7 +122,7 @@ export function FormPage(props: Props) {
 
   return (
     <div className="min-h-svh bg-muted">
-      <FormHeader scanDisabled={scanFill.phase !== null} onScan={openCamera} onBack={onBack} />
+      <FormHeader onBack={onBack} />
       <input
         ref={photoInput}
         type="file"
