@@ -44,12 +44,6 @@ export const CHANGELOG: Release[] = [
           "Mijn verkopen toont de verkopen op de datum van het contract. Is een verkoop op een andere dag verstuurd, " +
           "dan zie je dat aan het oranje label.",
       },
-      {
-        title: "Afval: alleen wat telt",
-        text:
-          "Bij de resultaten zie je alleen nog opzeggingen binnen 14 dagen en bankafval. Bankafval telt voortaan altijd " +
-          "mee voor netto.",
-      },
     ],
   },
 ]
