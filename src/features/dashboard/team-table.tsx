@@ -1,6 +1,6 @@
 import { ChevronRightIcon } from "lucide-react"
 import type { SalesStats } from "@shared/kpi"
-import { ageStep, formatRate, uitvalRate, type Period } from "./periods"
+import { ageStep, formatRate, type Period } from "./periods"
 
 type Props = {
   stats: SalesStats
@@ -30,21 +30,26 @@ export function TeamTable({ stats, period, showBank, onPick }: Props) {
   const showVoorgelicht = stats.reasons.some((reason) => reason.recruiter)
   const countBy = (rows: { recruiter?: string; count: number }[], recruiter: string) =>
     rows.reduce((sum, row) => (row.recruiter === recruiter ? sum + row.count : sum), 0)
-  const within14 = stats.afvalDelays.filter((delay) => inPeriod(delay.date) && ageStep(delay.days) === 0)
+  const within14 = stats.afvalDelays.filter(
+    (delay) => delay.kind === "opgezegd" && inPeriod(delay.date) && ageStep(delay.days) === 0,
+  )
   const voorgelicht = stats.reasons.filter((r) => inPeriod(r.date) && r.reason === VERKEERD_VOORGELICHT)
 
-  // Only afval within 14 days counts; without that per recruiter, all of it rather than netto looking like bruto.
-  const netto = (row: { sold: number; cancelled: number; bank: number; within14: number }) =>
-    row.sold - (showChurn ? row.within14 : row.cancelled + row.bank)
+  // As netto: cancellations within 14 days (all of them without that per recruiter) and all bankafval.
   const rows = [...totals]
-    .map(([number, total]) => ({
-      number,
-      name: names.get(number) ?? number,
-      ...total,
-      within14: countBy(within14, number),
-      voorgelicht: countBy(voorgelicht, number),
-    }))
-    .sort((a, b) => netto(b) - netto(a) || a.name.localeCompare(b.name, "nl"))
+    .map(([number, total]) => {
+      const opgezegd = showChurn ? countBy(within14, number) : total.cancelled
+      return {
+        number,
+        name: names.get(number) ?? number,
+        sold: total.sold,
+        opgezegd,
+        bank: total.bank,
+        netto: total.sold - opgezegd - total.bank,
+        voorgelicht: countBy(voorgelicht, number),
+      }
+    })
+    .sort((a, b) => b.netto - a.netto || a.name.localeCompare(b.name, "nl"))
 
   if (rows.length === 0) return <p className="py-2 text-sm text-muted-foreground">Geen verkopen in deze periode.</p>
 
@@ -55,14 +60,14 @@ export function TeamTable({ stats, period, showBank, onPick }: Props) {
           <th className="pb-2 text-left font-normal">Werver</th>
           <th className="pb-2 text-right font-medium text-foreground">Netto</th>
           <th className="pb-2 pl-2 text-right font-normal">Bruto</th>
-          <th className="hidden pb-2 pl-2 text-right font-normal sm:table-cell">Opgezegd</th>
+          <th
+            className="hidden pb-2 pl-2 text-right font-normal sm:table-cell"
+            title={showChurn ? "Opgezegd binnen 14 dagen" : undefined}
+          >
+            Opgezegd
+          </th>
           {showBank && <th className="hidden pb-2 pl-2 text-right font-normal sm:table-cell">Bank</th>}
-          {showChurn && (
-            <th className="pb-2 pl-2 text-right font-normal whitespace-nowrap" title="Afval binnen 14 dagen">
-              ≤ 14 d.
-            </th>
-          )}
-          <th className="pb-2 pl-2 text-right font-normal">Alle afval</th>
+          <th className="pb-2 pl-2 text-right font-normal">Afval</th>
           {showVoorgelicht && (
             <th className="pb-2 pl-2 text-right font-normal" title={VERKEERD_VOORGELICHT}>
               Voorgel.
@@ -81,16 +86,13 @@ export function TeamTable({ stats, period, showBank, onPick }: Props) {
                 <span className="block text-xs text-muted-foreground">{row.number}</span>
               </button>
             </td>
-            <td className="py-3 text-right font-semibold tabular-nums">{netto(row)}</td>
+            <td className="py-3 text-right font-semibold tabular-nums">{row.netto}</td>
             <td className="py-3 text-right tabular-nums">{row.sold}</td>
-            <td className="hidden py-3 text-right tabular-nums sm:table-cell">{row.cancelled}</td>
+            <td className="hidden py-3 text-right tabular-nums sm:table-cell">{row.opgezegd}</td>
             {showBank && <td className="hidden py-3 text-right tabular-nums sm:table-cell">{row.bank}</td>}
-            {showChurn && (
-              <td className="py-3 text-right tabular-nums">
-                {formatRate(row.sold > 0 ? row.within14 / row.sold : null)}
-              </td>
-            )}
-            <td className="py-3 text-right tabular-nums">{formatRate(uitvalRate(row))}</td>
+            <td className="py-3 text-right tabular-nums">
+              {formatRate(row.sold > 0 ? (row.sold - row.netto) / row.sold : null)}
+            </td>
             {showVoorgelicht && (
               <td className="py-3 text-right tabular-nums">
                 {row.voorgelicht}

@@ -21,8 +21,10 @@ import {
   BONUS_FIRST,
   buildPeriods,
   chartPeriods,
+  COUNTED_DAYS,
   formatDay,
   formatTimestamp,
+  isCountedCancellation,
   isCountedComplete,
   periodDates,
   periodKey,
@@ -74,8 +76,6 @@ export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBac
   const provisional = selected ? !isCountedComplete(selected, enteredUntil) : false
   // Bankafval shows once ZMAdmin sends it.
   const showBank = data?.stats.days.some((day) => day.bankAfval !== undefined) ?? false
-  // How long after the sale sales fell away shows once ZMAdmin sends it.
-  const byAge = (data?.stats.afvalDelays.length ?? 0) > 0
   const recruiters = team.data?.stats.recruiters ?? data?.stats.recruiters ?? []
   const unit = granularity === "week" ? "week" : "maand"
   // The bonus is per recruiter per calendar month. A week counts towards the month its Thursday is in.
@@ -85,27 +85,39 @@ export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBac
       : undefined
   const customers = selected
     ? {
-        items: data?.stats.cancellations.filter((c) => c.soldOn >= selected.start && c.soldOn <= selected.end) ?? [],
+        items:
+          data?.stats.cancellations.filter(
+            (c) => c.soldOn >= selected.start && c.soldOn <= selected.end && isCountedCancellation(c),
+          ) ?? [],
         bank: data?.stats.bankAfval.filter((b) => b.soldOn >= selected.start && b.soldOn <= selected.end) ?? [],
       }
     : { items: [], bank: [] }
   // "week 41" or "juni 2025". Only the bar at the top names the period: every card below is about it.
   const periodName = selected ? periodTitle(selected, granularity) : ""
 
-  // A recruiter's reasons come from their own cancellations, which carry the sale day. The team only has the totals
-  // per reason; per period once the endpoint sends their sale day (see SalesStats.reasons).
+  // A recruiter's reasons come from their own cancellations, which carry both dates, so only those that count are in
+  // them. The team only has the reasons per sale day, also of later cancellations, until the endpoint says how long
+  // after the sale (see SalesStats.reasons); and only the totals for everything loaded until it sends the sale day.
   const reasonsPerPeriod = wervernr !== null || (data?.stats.reasons.every((r) => r.date) ?? true)
   const reasons =
     !data || !selected
       ? []
       : wervernr !== null
         ? reasonsIn(
-            data.stats.cancellations.map((c) => ({ date: c.soldOn, reason: c.reason, count: 1 })),
+            data.stats.cancellations
+              .filter(isCountedCancellation)
+              .map((c) => ({ date: c.soldOn, reason: c.reason, count: 1 })),
             selected,
           )
         : reasonsIn(data.stats.reasons, reasonsPerPeriod ? selected : null)
+  const reasonsNote =
+    wervernr !== null || !data
+      ? null
+      : reasonsPerPeriod
+        ? `Alle opzeggingen van deze ${unit}, ook na ${COUNTED_DAYS} dagen.`
+        : `Alle opzeggingen van verkopen sinds ${formatDay(data.from)} ${data.from.slice(0, 4)}.`
 
-  const voorgelicht = reasonsPerPeriod ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
+  const voorgelicht = reasonsNote === null ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
 
   function changeGranularity(next: Granularity) {
     // Stay on the same moment: the week or month that contains the selected period's first day.
@@ -254,20 +266,14 @@ export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBac
             <div className="flex min-w-0 flex-col gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Alle afval</CardTitle>
+                  <CardTitle>Afval</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <AfvalBreakdown
                     period={selected}
                     showBank={showBank}
-                    byAge={byAge}
-                    enteredUntil={enteredUntil}
                     reasons={reasons}
-                    reasonsNote={
-                      reasonsPerPeriod
-                        ? null
-                        : `Verkopen sinds ${formatDay(data.from)} ${data.from.slice(0, 4)}; per ${unit} volgt nog.`
-                    }
+                    reasonsNote={reasonsNote}
                     voorgelicht={voorgelicht}
                     voorgelichtReason={VERKEERD_VOORGELICHT}
                   />

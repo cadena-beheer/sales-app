@@ -4,7 +4,7 @@ import type { SalesStatsBankAfval, SalesStatsCancellation } from "@shared/kpi"
 import { Button } from "@/components/ui/button"
 import { lookupHouse } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { COUNTED_DAYS, daysBetween, formatDay } from "./periods"
+import { daysBetween, formatDay } from "./periods"
 import { ShowMore } from "./show-more"
 import { VERKEERD_VOORGELICHT } from "./team-table"
 
@@ -28,8 +28,8 @@ type Line = {
 }
 
 /**
- * The recruiter's own sales that fell away: which house, why, how many days after the sale and on which date. Those
- * days are the number to look at, so they stand out, and are faded when too late to count against netto.
+ * The recruiter's own sales that fell away and count against netto (the caller leaves out later cancellations): which
+ * house, why, how many days after the sale and on which date. Those days are the number to look at, so they stand out.
  */
 export function CancellationList({ items, bank }: Props) {
   const lines: Line[] = [
@@ -75,9 +75,7 @@ export function CancellationList({ items, bank }: Props) {
                 <p>
                   <span className="mr-1 text-sm text-muted-foreground">Na</span>
 
-                  <span className={cn("text-xl font-medium", days > COUNTED_DAYS && "text-muted-foreground")}>
-                    {days}
-                  </span>
+                  <span className="text-xl font-medium">{days}</span>
                   <span className="ml-1 text-sm text-muted-foreground">dagen</span>
                 </p>
                 <p className="text-sm text-muted-foreground">{fallenOn(line.on, line.soldOn)}</p>

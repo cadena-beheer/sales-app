@@ -7,6 +7,7 @@ import {
   chartPeriods,
   daysBetween,
   delaySteps,
+  isCountedCancellation,
   formatTimestamp,
   isProvisional,
   isWindowComplete,
@@ -124,6 +125,14 @@ describe("afval by age", () => {
     expect(isWindowComplete(period, 14, "2026-10-13T09:00:00")).toBe(false)
     expect(isWindowComplete(period, 14, null)).toBe(false)
     expect(isWindowComplete(period, null, null)).toBe(true)
+  })
+})
+
+describe("isCountedCancellation", () => {
+  it("is a cancellation within 14 days, or one without a date", () => {
+    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-09-15T10:00:00" })).toBe(true)
+    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-09-16T10:00:00" })).toBe(false)
+    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: null })).toBe(true)
   })
 })
 
@@ -299,6 +308,16 @@ describe("netto", () => {
     expect(week.counted).toEqual({ opgezegd: 1, bank: 1 })
     expect(countedAfval(week)).toBe(2)
     expect(nettoOf(week)).toBe(8)
+  })
+
+  it("counts bankafval whenever it came", () => {
+    const [month] = buildPeriods([{ ...day("2026-09-01", 10, 1), bankAfval: 2 }], "month", "2026-09-01", "2026-09-30", [
+      delay(40),
+      delay(10, "bank"),
+      delay(45, "bank"),
+    ])
+    expect(month.counted).toEqual({ opgezegd: 0, bank: 2 })
+    expect(nettoOf(month)).toBe(8)
   })
 
   it("counts all afval when the endpoint does not say when it fell away", () => {

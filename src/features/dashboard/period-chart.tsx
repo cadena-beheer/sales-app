@@ -55,7 +55,7 @@ export function PeriodChart({ periods, granularity, selectedKey, onSelect, isPro
             const provisional = isProvisional(period)
             const rate = formatRate(period.sold > 0 ? countedAfval(period) / period.sold : null)
             const bank = showBank ? `, ${period.counted.bank} bankafval` : ""
-            const summary = `${longLabel(period, granularity)}: ${netto} netto, binnen 14 dagen ${period.counted.opgezegd} opgezegd${bank}, ${rate} afval`
+            const summary = `${longLabel(period, granularity)}: ${netto} netto, ${period.counted.opgezegd} binnen 14 dagen opgezegd${bank}, ${rate} afval`
             return (
               <button
                 key={period.key}
@@ -112,8 +112,8 @@ export function PeriodChart({ periods, granularity, selectedKey, onSelect, isPro
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <Legend swatch="bg-netto">Netto</Legend>
         <Legend swatch="bg-opgezegd">Opgezegd ≤14d</Legend>
-        {showBank && <Legend swatch="bg-bankafval">Bankafval ≤14d</Legend>}
-        <li>% = afval ≤14d</li>
+        {showBank && <Legend swatch="bg-bankafval">Bankafval</Legend>}
+        <li>% = afval van bruto</li>
         {periods.some(isProvisional) && (
           <Legend swatch="bg-[repeating-linear-gradient(135deg,transparent_0_2px,var(--color-muted-foreground)_2px_3px)]">
             Opzeggingen kunnen nog binnenkomen.

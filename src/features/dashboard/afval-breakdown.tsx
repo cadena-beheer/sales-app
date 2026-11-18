@@ -1,16 +1,14 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
-import { AFVAL_AGES, formatRate, isWindowComplete, type Period } from "./periods"
+import { COUNTED_DAYS, countedAfval, formatRate, type Period } from "./periods"
 import { ShowMore } from "./show-more"
 
 type Props = {
   period: Period
   showBank: boolean
-  /** Whether ZMAdmin sends how long after the sale it fell away. */
-  byAge: boolean
-  enteredUntil: string | null
+  /** The reasons of the cancellations that count (within COUNTED_DAYS), most frequent first. */
   reasons: { reason: string; count: number }[]
-  /** When the reasons are only known for everything loaded, not for this period: then no share of this period's sales. */
+  /** When the reasons are not just those of this period's afval that counts: then no share of this period's sales. */
   reasonsNote: string | null
   /** Cancellations with the reason "Verkeerd voorgelicht"; null when they are not known per period. */
   voorgelicht: number | null
@@ -18,23 +16,16 @@ type Props = {
 }
 
 /**
- * All the afval of one period, also what is too late to count against netto: the numbers, then when and why, each starting
- * with its first rows. Every percentage is a share of the bruto sales, so the rows of a block add up, and the bars are on one scale.
+ * The afval of one period that is about the sale, and so counts against netto: cancelled within COUNTED_DAYS, and all
+ * bankafval. Later cancellations are about the customer and are left out. The numbers, then why, starting with the
+ * first rows. Every percentage is a share of the bruto sales.
  */
 export function AfvalBreakdown(props: Props) {
-  const { period, showBank, byAge, enteredUntil, reasons, reasonsNote, voorgelicht, voorgelichtReason } = props
-  const afval = period.cancelled + period.bank
+  const { period, showBank, reasons, reasonsNote, voorgelicht, voorgelichtReason } = props
+  const afval = countedAfval(period)
   if (afval === 0) return <p className="py-2 text-sm text-muted-foreground">Geen afval in deze periode.</p>
 
   const share = (count: number) => formatRate(period.sold > 0 ? count / period.sold : null)
-  const ages = AFVAL_AGES.map((age, step) => ({
-    label: age.short,
-    opgezegd: period.aged.opgezegd[step],
-    bank: period.aged.bank[step],
-    complete: isWindowComplete(period, Number.isFinite(age.upTo) ? age.upTo : 365, enteredUntil),
-  }))
-  // Whatever has no known date, such as a typo in ZMAdmin.
-  const undated = afval - ages.reduce((sum, age) => sum + age.opgezegd + age.bank, 0)
   const others = reasons.filter((r) => r.reason !== voorgelichtReason)
   const reasonMax = reasonsNote ? Math.max(1, ...reasons.map((r) => r.count)) : afval
 
@@ -42,38 +33,24 @@ export function AfvalBreakdown(props: Props) {
     <div className="flex flex-col divide-y [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Stat label="Totaal" count={afval} share={share(afval)} />
-        <Stat label="Opgezegd" swatch="bg-opgezegd" count={period.cancelled} share={share(period.cancelled)} />
-        {showBank && <Stat label="Bankafval" swatch="bg-bankafval" count={period.bank} share={share(period.bank)} />}
+        <Stat
+          label={`Opgezegd ≤ ${COUNTED_DAYS} dagen`}
+          swatch="bg-opgezegd"
+          count={period.counted.opgezegd}
+          share={share(period.counted.opgezegd)}
+        />
+        {showBank && (
+          <Stat
+            label="Bankafval"
+            swatch="bg-bankafval"
+            count={period.counted.bank}
+            share={share(period.counted.bank)}
+          />
+        )}
         {voorgelicht !== null && (
           <Stat label={voorgelichtReason} swatch="bg-voorgelicht" count={voorgelicht} share={share(voorgelicht)} />
         )}
       </dl>
-
-      {byAge && (
-        <section className="flex flex-col gap-2.5">
-          <h3 className="font-medium">Wanneer na de verkoop</h3>
-          <Rows limit={2}>
-            {ages.map((age) => (
-              <Row
-                key={age.label}
-                label={age.label}
-                note={share(age.opgezegd + age.bank)}
-                count={age.opgezegd + age.bank}
-                max={afval}
-                faded={!age.complete}
-              >
-                <Bar color="bg-opgezegd" count={age.opgezegd} />
-                <Bar color="bg-bankafval" count={age.bank} />
-              </Row>
-            ))}
-            {undated > 0 && (
-              <Row label="Onbekend" note={share(undated)} count={undated} max={afval}>
-                <Bar color="bg-muted-foreground" count={undated} />
-              </Row>
-            )}
-          </Rows>
-        </section>
-      )}
 
       <section className="flex flex-col gap-2.5">
         <div>
@@ -137,15 +114,13 @@ type RowProps = {
   max: number
   /** A percentage after the count. */
   note: string | null
-  /** A time that is not over yet for every sale of the period: it can still grow. */
-  faded?: boolean
   strong?: boolean
   children: ReactNode
 }
 
-function Row({ label, count, max, note, faded, strong, children }: RowProps) {
+function Row({ label, count, max, note, strong, children }: RowProps) {
   return (
-    <li className={cn("grid grid-cols-[8.5rem_1fr_4.5rem] items-center gap-2 text-sm", faded && "opacity-60")}>
+    <li className="grid grid-cols-[8.5rem_1fr_4.5rem] items-center gap-2 text-sm">
       <span className={cn("truncate", strong && "font-medium")} title={label}>
         {label}
       </span>

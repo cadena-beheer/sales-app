@@ -56,7 +56,7 @@ export function NettoSummary({ period, bonusMonth }: Props) {
         <dl className="flex gap-2.5 [&>*]:grow [&>*:not(:first-child)]:border-l [&>*:not(:first-child)]:pl-2.5 @lg:gap-4 @lg:[&>*:not(:first-child)]:pl-4">
           <Kpi label="Netto" swatch="bg-netto" value={netto} size="text-[3.25rem] @lg:text-7xl" />
           <Kpi
-            label={`Afval ≤${COUNTED_DAYS}d`}
+            label="Afval"
             swatch="bg-opgezegd"
             value={formatRate(period.sold > 0 ? afval / period.sold : null)}
             size="text-4xl @lg:text-5xl"
