@@ -20,8 +20,8 @@ import { useSalesDay } from "./use-sales-day"
 type Props = { profile: Profile | undefined; userId: string | undefined; onBack: () => void }
 
 /**
- * What was sent in, one day at a time (by the moment it was received), back to a month ago: a sanity check for the
- * recruiter. The sales manager sees everyone's, grouped per recruiter.
+ * What was sent in, one day at a time by contract date (as the results count it), back to a month ago: a sanity check
+ * for the recruiter. A sale sent on another day says so. The sales manager sees everyone's, grouped per recruiter.
  */
 export function SalesListPage({ profile, userId, onBack }: Props) {
   const isAdmin = profile?.isAdmin ?? false
@@ -32,8 +32,9 @@ export function SalesListPage({ profile, userId, onBack }: Props) {
   const { data: queued = [] } = useQuery({
     queryKey: ["outbox", userId],
     queryFn: () => loadOutbox(userId!),
-    enabled: userId !== undefined && date === now,
+    enabled: userId !== undefined,
     networkMode: "always",
+    select: (items) => items.filter((item) => item.values.datum === date),
   })
   const oldest = addDays(now, -MAX_DAYS_BACK)
 
@@ -127,7 +128,7 @@ export function SalesListPage({ profile, userId, onBack }: Props) {
           </div>
         )}
 
-        {queued.length > 0 && date === now && (
+        {queued.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Nog niet verstuurd · {queued.length}</CardTitle>
@@ -136,7 +137,7 @@ export function SalesListPage({ profile, userId, onBack }: Props) {
             <CardContent>
               <ul className="-my-3 divide-y">
                 {queued.map((item) => (
-                  <SaleItem key={item.values.rowId} sale={item.values} day={date} status="queued" />
+                  <SaleItem key={item.values.rowId} sale={item.values} status="queued" />
                 ))}
               </ul>
             </CardContent>
@@ -147,8 +148,8 @@ export function SalesListPage({ profile, userId, onBack }: Props) {
           <>
             <p className="px-1 text-sm text-muted-foreground">
               {total === 0
-                ? `Geen verkopen ontvangen op ${shortDate(date)}.`
-                : `${total} ${total === 1 ? "verkoop" : "verkopen"} ontvangen${
+                ? `Geen verkopen met contractdatum ${shortDate(date)}.`
+                : `${total} ${total === 1 ? "verkoop" : "verkopen"} met deze contractdatum${
                     isAdmin && groups.length > 1 ? ` van ${groups.length} wervers` : ""
                   }.`}
             </p>
@@ -170,7 +171,6 @@ export function SalesListPage({ profile, userId, onBack }: Props) {
                         <SaleItem
                           key={sale.rowId}
                           sale={sale}
-                          day={date}
                           received={sale.received}
                           status={sale.onboardingStatus}
                         />

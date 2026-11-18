@@ -233,19 +233,19 @@ export type SubmittedSale = {
 }
 
 /**
- * One page of the sales received between `from` and `to` (ISO timestamps), oldest first, with the total for the
- * whole range. Row-level security decides whose: a recruiter gets their own, an admin everyone's.
+ * One page of the sales with contract date `date` (yyyy-MM-dd), in the order they were received, with the total for
+ * that day. By contract date, like the results from ZMAdmin, so both count a sale on the same day. Row-level
+ * security decides whose: a recruiter gets their own, an admin everyone's.
  */
 export async function listSales(
-  from: string,
-  to: string,
+  date: string,
   offset: number,
   limit: number,
 ): Promise<{ sales: SubmittedSale[]; total: number }> {
   if (import.meta.env.DEV && DEMO_MODE) {
     const { demoSales } = await import("@/features/sales-list/demo-sales")
     await new Promise((resolve) => setTimeout(resolve, 300))
-    const all = demoSales(from, DEMO_MODE === "admin")
+    const all = demoSales(date, DEMO_MODE === "admin")
     return { sales: all.slice(offset, offset + limit), total: all.length }
   }
   const { data, count, error } = await supabase
@@ -254,8 +254,7 @@ export async function listSales(
       "row_id, received, datum, wervernaam, wervernr, klantnummer, naam, straat, huisnummer, toevoeging, plaats, onboarding_status, onboarding_message:onboarding_response->>message, test",
       { count: "exact" },
     )
-    .gte("received", from)
-    .lt("received", to)
+    .eq("datum", date)
     // row_id breaks ties, so a row never shows up on two pages.
     .order("received")
     .order("row_id")

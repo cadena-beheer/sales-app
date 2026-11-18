@@ -1,7 +1,6 @@
 // Dev only (see DEMO_MODE in lib/api.ts): made-up sales so the list can be seen without logging in.
 import type { OnboardingStatus, SubmittedSale } from "@/lib/api"
 import { addDays } from "../dashboard/periods"
-import { localDate } from "./days"
 
 const RECRUITERS = [
   { wervernaam: "Jan van Dorth", wervernr: "0212BB" },
@@ -17,8 +16,7 @@ const CUSTOMERS = [
 ]
 const STATUSES: (OnboardingStatus | null)[] = ["accepted", "accepted", "refused", "accepted", null, "failed"]
 
-export function demoSales(from: string, team: boolean): SubmittedSale[] {
-  const date = localDate(from)
+export function demoSales(date: string, team: boolean): SubmittedSale[] {
   const seed = Number(date.slice(8, 10))
   const recruiters = team ? RECRUITERS : RECRUITERS.slice(0, 1)
   return recruiters
@@ -26,13 +24,14 @@ export function demoSales(from: string, team: boolean): SubmittedSale[] {
       Array.from({ length: (seed + r) % 4 }, (_, i) => {
         const [naam, straat, huisnummer, toevoeging, plaats] = CUSTOMERS[(seed + r + i) % CUSTOMERS.length]
         const status = STATUSES[(seed + r * 2 + i) % STATUSES.length]
+        // Now and then a form sent the day after (offline, or filled in later).
+        const sentOn = (seed + i) % 5 === 0 ? addDays(date, 1) : date
         return {
           rowId: `${date}-${r}-${i}`,
           received: new Date(
-            `${date}T${String(10 + i * 2 + r).padStart(2, "0")}:${String((seed * 7 + i * 13) % 60).padStart(2, "0")}:00`,
+            `${sentOn}T${String(10 + i * 2 + r).padStart(2, "0")}:${String((seed * 7 + i * 13) % 60).padStart(2, "0")}:00`,
           ).toISOString(),
-          // Now and then a form filled in the day before (sent later, or a wrong date).
-          datum: (seed + i) % 5 === 0 ? addDays(date, -1) : date,
+          datum: date,
           ...recruiter,
           klantnummer: String(100200 + seed * 10 + r * 3 + i),
           naam,

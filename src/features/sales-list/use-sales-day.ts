@@ -1,22 +1,18 @@
 import { useMemo } from "react"
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
 import { DEMO_MODE, listSales } from "@/lib/api"
-import { dayRange } from "./days"
 
 /** Sales per request; "Meer laden" fetches the next page. Small in the demo so the button shows. */
 const PAGE_SIZE = import.meta.env.DEV && DEMO_MODE ? 4 : 20
 
 /**
- * The sales received on one day, a page at a time: the recruiter's own, or everyone's for an admin (row-level
+ * The sales with one contract date, a page at a time: the recruiter's own, or everyone's for an admin (row-level
  * security decides).
  */
 export function useSalesDay(date: string) {
   const query = useInfiniteQuery({
     queryKey: ["sales-day", date],
-    queryFn: ({ pageParam }) => {
-      const { from, to } = dayRange(date)
-      return listSales(from, to, pageParam, PAGE_SIZE)
-    },
+    queryFn: ({ pageParam }) => listSales(date, pageParam, PAGE_SIZE),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((sum, page) => sum + page.sales.length, 0)
