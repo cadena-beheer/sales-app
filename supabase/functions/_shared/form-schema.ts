@@ -235,11 +235,13 @@ export type ScanProblem = (typeof SCAN_PROBLEMS)[number]
 const scanPoint = z.strictObject({ x: z.number(), y: z.number() })
 
 /**
- * Claude's whole answer for a photo: first whether the printed text can be read, then where the sheet of paper is
- * (for the scanner-style copy), then the form itself.
+ * Claude's whole answer for a photo: first whether the printed text can be read, then whether the handwriting is
+ * faint (pencil, a pen running dry: a new photo does not help, but the werver should check the fields), then where
+ * the sheet of paper is (for the scanner-style copy), then the form itself.
  */
 export const scanReadingSchema = z.strictObject({
   leesbaarheid: z.enum(["goed", ...SCAN_PROBLEMS]),
+  handschrift: z.enum(["duidelijk", "vaag"]),
   hoeken: z
     .strictObject({ linksboven: scanPoint, rechtsboven: scanPoint, rechtsonder: scanPoint, linksonder: scanPoint })
     .nullable(),
@@ -260,6 +262,8 @@ export type ScanResponse = {
   mock: boolean
   /** null when the printed text is readable. */
   problem: ScanProblem | null
+  /** The handwriting is faint (e.g. pencil): the fields need an extra careful check. */
+  faintWriting: boolean
   corners: ScanCorners | null
 }
 

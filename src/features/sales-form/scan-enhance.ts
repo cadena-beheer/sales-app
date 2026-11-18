@@ -2,8 +2,9 @@ import type { ScanCorners, ScanPoint } from "@shared/form-schema"
 
 /**
  * The scanner-style copy of a contract photo, the one that goes to ZMAdmin: the sheet cut out and straightened by the
- * corners Claude found, shadows and the grey cast of the paper taken out, so the paper is white and the ink stands
- * out. Colors stay: the office should still see blue pen. Without usable corners only the paper is whitened.
+ * corners Claude found, shadows and the grey cast of the paper lightened, so the ink stands out. Only halfway to a
+ * scan (CLEAN_STRENGTH): a full scan look whitens faint writing, such as pencil, away. Colors stay: the office should
+ * still see blue pen. Without usable corners the photo is only cleaned up, not cut.
  * All on the phone, on a canvas: no extra library, and the edge functions have little CPU to spare.
  */
 export async function enhanceScan(photo: Blob, corners: ScanCorners | null): Promise<File> {
@@ -23,7 +24,8 @@ export async function enhanceScan(photo: Blob, corners: ScanCorners | null): Pro
     canvas.toBlob(
       (result) => (result ? resolve(result) : reject(new Error("Foto verwerken mislukt"))),
       "image/jpeg",
-      0.85,
+      // Thin, light lines suffer most from compression.
+      0.9,
     ),
   )
   return new File([blob], "scan.jpg", { type: "image/jpeg" })
@@ -132,13 +134,27 @@ function warp(source: ImageData, quad: Quad): ImageData {
 
 // Ink darker than this share of the paper becomes as dark as it gets; paper lighter than WHITE_AT becomes white.
 const INK_AT = 0.2
-const WHITE_AT = 0.88
+const WHITE_AT = 0.95
+/** Above 1 the curve darkens light greys (pencil, a thin pen) far more than dark ones, so they do not wash out. */
+const INK_GAMMA = 1.8
+/** How far towards the cleaned-up copy: 0 is the photo as taken (only straightened), 1 the full scan look. */
+const CLEAN_STRENGTH = 0.5
+
+/**
+ * One channel of one pixel, cleaned: its brightness compared to the paper around it, put on the curve, then mixed
+ * with the value as photographed by CLEAN_STRENGTH.
+ */
+export function cleanChannel(value: number, paper: number): number {
+  const level = Math.min(1, Math.max(0, (value / paper - INK_AT) / (WHITE_AT - INK_AT)))
+  const cleaned = 255 * level ** INK_GAMMA
+  return Math.round(value + (cleaned - value) * CLEAN_STRENGTH)
+}
 /** Blocks per short side when estimating the paper's own color: smaller than a shadow, larger than a letter. */
 const BLOCKS = 40
 
 /**
- * Divides every pixel by the paper's color around it, so shadows and a grey or yellow cast go and the paper turns
- * white, then stretches the contrast. The paper's color is the brightest pixel per block (letters are darker than
+ * Compares every pixel with the paper's color around it, so shadows and a grey or yellow cast fade and the paper
+ * lightens, then puts it on the ink curve (cleanChannel). The paper's color is the brightest pixel per block (letters are darker than
  * the paper, so they drop out), smoothed over the neighbouring blocks.
  */
 function whiten(image: ImageData) {
@@ -191,8 +207,7 @@ function whiten(image: ImageData) {
         const background =
           (paper[(r0 * cols + k0) * 3 + c] * (1 - ax) + paper[(r0 * cols + k1) * 3 + c] * ax) * (1 - ay) +
           (paper[(r1 * cols + k0) * 3 + c] * (1 - ax) + paper[(r1 * cols + k1) * 3 + c] * ax) * ay
-        const ratio = data[i + c] / background
-        data[i + c] = Math.round(255 * Math.min(1, Math.max(0, (ratio - INK_AT) / (WHITE_AT - INK_AT))))
+        data[i + c] = cleanChannel(data[i + c], background)
       }
     }
   }

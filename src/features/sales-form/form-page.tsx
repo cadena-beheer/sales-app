@@ -141,7 +141,14 @@ export function FormPage(props: Props) {
           profile={profile}
           submitting={submitting}
           naamCorrection={scanFill.naamCorrection}
-          photo={<PhotoCard url={contractPhoto.url} disabled={scanFill.phase !== null} onRetake={openCamera} />}
+          photo={
+            <PhotoCard
+              url={contractPhoto.url}
+              faintWriting={scanFill.faintWritingFor === rowId}
+              disabled={scanFill.phase !== null}
+              onRetake={openCamera}
+            />
+          }
           onSubmit={handleSubmit}
           onDiscard={handleDiscard}
         />

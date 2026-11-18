@@ -20,6 +20,10 @@ Leesbaarheid (beoordeel dit eerst):
 - Kies alleen een probleem als het formulier daardoor niet betrouwbaar uit te lezen is: "te_donker"; "te_licht" (overbelicht, of een felle schittering over een groot deel); "onscherp" (bewogen of niet scherpgesteld); "afgesneden" (een flink deel van het formulier valt buiten de foto); "geen_formulier" (er staat geen verkoopformulier op de foto).
 - Lees de velden in alle gevallen zo goed mogelijk uit.
 
+Handschrift:
+- handschrift: "vaag" als de ingevulde waarden lichter, dunner of minder scherp zijn dan gewone pen, waardoor ze lastig te lezen zijn: met potlood geschreven, een pen die bijna leeg is, of heel licht geschreven. Ook als je ze toch hebt kunnen lezen. Anders "duidelijk".
+- Een nieuwe foto lost vaag handschrift niet op; het is alleen een waarschuwing om de velden extra goed te controleren.
+
 Hoeken van het papier:
 - hoeken: de vier hoekpunten van het vel papier (het hele vel, niet alleen het bedrukte deel), als fractie van de breedte (x) en de hoogte (y) van de foto: x = 0 is de linkerrand en 1 de rechterrand, y = 0 is de bovenrand en 1 de onderrand.
 - linksboven, rechtsboven, rechtsonder en linksonder zijn de hoeken zoals het formulier rechtop gelezen wordt, ook als de foto gedraaid of op z'n kop is genomen.
@@ -99,6 +103,7 @@ serve(async (req) => {
     fields: toScanResult(reading.formulier, scanContactFields),
     mock: !apiKey,
     problem: reading.leesbaarheid === "goed" ? null : reading.leesbaarheid,
+    faintWriting: reading.handschrift === "vaag",
     corners: toScanCorners(reading.hoeken),
   }
   return json(response)
@@ -160,6 +165,7 @@ async function mockRead(): Promise<ScanReading> {
   await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY_MS))
   return scanReadingSchema.parse({
     leesbaarheid: "goed",
+    handschrift: "duidelijk",
     hoeken: null,
     formulier: { ...MOCK_EXTRACTION, datum: amsterdamToday() },
   })
