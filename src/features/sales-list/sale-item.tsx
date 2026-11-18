@@ -11,22 +11,21 @@ import { Badge } from "@/components/ui/badge"
 import type { OnboardingStatus, SubmittedSale } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { formatDay } from "../dashboard/periods"
-import { formatTime } from "./days"
+import { formatTime, localDate } from "./days"
 
 type Props = {
   sale: Pick<SubmittedSale, "naam" | "klantnummer" | "datum" | "straat" | "huisnummer" | "toevoeging" | "plaats"> &
     Partial<Pick<SubmittedSale, "onboardingMessage" | "test">>
-  /** The day it was sent on; the form's own date is pointed out when it differs. */
-  day: string
-  /** Received time; absent for a form still in the outbox. */
+  /** Received time; absent for a form still in the outbox. Pointed out when not on the contract date. */
   received?: string
   status: OnboardingStatus | null | "queued"
 }
 
 /** One submitted sale: who, where, what, and whether ZMAdmin took it. */
-export function SaleItem({ sale, day, received, status }: Props) {
+export function SaleItem({ sale, received, status }: Props) {
   const address = [sale.straat, `${sale.huisnummer}${sale.toevoeging ? ` ${sale.toevoeging}` : ""}`].join(" ").trim()
-  const otherDate = sale.datum !== day
+  const sentOn = received ? localDate(received) : null
+  const otherDate = sentOn !== null && sentOn !== sale.datum
   return (
     <li className="flex flex-col gap-1 py-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -42,15 +41,17 @@ export function SaleItem({ sale, day, received, status }: Props) {
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
         <StatusBadge status={status} />
         {sale.test && <Badge className="bg-amber-500 text-black">TEST</Badge>}
-        <Badge
-          variant="outline"
-          className={cn(
-            "ml-auto",
-            otherDate && "border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300",
-          )}
-        >
-          <CalendarIcon /> Contractdatum {formatDay(sale.datum)}
-        </Badge>
+        {sentOn && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "ml-auto",
+              otherDate && "border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300",
+            )}
+          >
+            <CalendarIcon /> Verstuurd {formatDay(sentOn)}
+          </Badge>
+        )}
       </div>
       {status === "refused" && sale.onboardingMessage && (
         <p className="text-xs text-destructive">{sale.onboardingMessage}</p>

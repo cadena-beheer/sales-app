@@ -28,6 +28,28 @@ describe("page addresses", () => {
     expect(pageFromUrl("/onbekend", "")).toEqual({ view: "form", viewedAs: undefined })
   })
 
+  it("keeps whose results and which period in the address", () => {
+    expect(urlOf({ view: "dashboard" })).toBe("/resultaten")
+    expect(urlOf({ view: "dashboard", viewedAs: douglas, period: { granularity: "month", key: "2026-10" } })).toBe(
+      "/resultaten?werver=2603AP&periode=2026-10",
+    )
+    expect(urlOf({ view: "dashboard", period: { granularity: "week" } })).toBe("/resultaten?per=week")
+    expect(pageFromUrl("/resultaten", "?werver=2603AP&per=week&periode=2026-W41")).toEqual({
+      view: "dashboard",
+      viewedAs: { wervernr: "2603AP", name: "2603AP" },
+      period: { granularity: "week", key: "2026-W41" },
+    })
+    expect(pageFromUrl("/resultaten", "")).toEqual({ view: "dashboard" })
+  })
+
+  it("leaves out a period key that does not fit", () => {
+    expect(pageFromUrl("/resultaten", "?periode=2026-W41")).toEqual({ view: "dashboard" })
+    expect(pageFromUrl("/resultaten", "?per=week&periode=2026-10")).toEqual({
+      view: "dashboard",
+      period: { granularity: "week", key: undefined },
+    })
+  })
+
   it("opens one step up when the address cannot hold what the page needs", () => {
     expect(pageFromUrl("/lopen", "?gebied=a1")).toEqual({ view: "areas", viewedAs: undefined })
     expect(pageFromUrl("/kaart", "?gebied=a1")).toEqual({ view: "map", map: {} })

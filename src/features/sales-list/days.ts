@@ -5,14 +5,6 @@ export const MAX_DAYS_BACK = 31
 
 const WEEKDAYS = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"]
 
-/** Start and end (exclusive) of a day on the phone's calendar, as ISO timestamps for the `received` column. */
-export function dayRange(date: string): { from: string; to: string } {
-  return {
-    from: new Date(`${date}T00:00:00`).toISOString(),
-    to: new Date(`${addDays(date, 1)}T00:00:00`).toISOString(),
-  }
-}
-
 /** "Vandaag", "Gisteren" or "Zaterdag". */
 export function dayTitle(date: string, now = today()): string {
   if (date === now) return "Vandaag"

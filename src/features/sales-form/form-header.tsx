@@ -4,7 +4,6 @@ import { HEADER_BUTTON_CLASS, PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 
 type Props = {
-  online: boolean
   scanDisabled: boolean
   onScan: () => void
   /** Set when the form was opened from a door marked "Verkocht": back to walking. */
@@ -12,7 +11,7 @@ type Props = {
 }
 
 /** Header of the form page: back to walking when it came from there, camera scan, logo and, as on every page, the menu. */
-export function FormHeader({ online, scanDisabled, onScan, onBack }: Props) {
+export function FormHeader({ scanDisabled, onScan, onBack }: Props) {
   return (
     <PageHeader
       start={
@@ -22,13 +21,7 @@ export function FormHeader({ online, scanDisabled, onScan, onBack }: Props) {
               <ArrowLeftIcon />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            className={HEADER_BUTTON_CLASS}
-            title={online ? undefined : "Scannen werkt alleen online"}
-            disabled={scanDisabled}
-            onClick={onScan}
-          >
+          <Button variant="ghost" className={HEADER_BUTTON_CLASS} disabled={scanDisabled} onClick={onScan}>
             <CameraIcon /> Scan contract
           </Button>
         </>

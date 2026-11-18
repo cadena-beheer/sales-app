@@ -2,17 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import * as maplibregl from "maplibre-gl"
 import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl"
-import { ArrowLeftIcon, MapPinIcon, PencilIcon, ZoomInIcon } from "lucide-react"
+import { ArrowLeftIcon, MapPinIcon, MegaphoneIcon, PencilIcon, WrenchIcon, ZoomInIcon } from "lucide-react"
 import { toast } from "sonner"
 import { AppMenu } from "@/components/app-menu"
 import { HEADER_BUTTON_CLASS, PageHeader } from "@/components/page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { getSalesMap, getSalesOpportunities, lookupPlace } from "@/lib/api"
+import { getSalesIssues, getSalesMap, getSalesOpportunities, lookupPlace } from "@/lib/api"
 import { SHOW_AREAS } from "@/lib/deployment"
 import { getErrorMessage } from "@/lib/errors"
 import { cn } from "@/lib/utils"
+import type { SalesIssue } from "@shared/sales-issues"
 import type { DetailView, MapArea, SalesStreet } from "@shared/sales-map-view"
 import type { OpportunitiesView, OpportunityArea, OpportunityDetail, WozBand } from "@shared/sales-opportunities"
 import {
@@ -33,6 +34,7 @@ import {
 import { AssignPanel } from "../areas/assign-panel"
 import {
   addHatch,
+  applyMarketing,
   applyOverlay,
   codeAt,
   geometryBounds,
@@ -45,6 +47,9 @@ import {
 } from "../areas/map-overlay"
 import { useAreaAssignments, useCreateAreaAssignment, useRecruiters } from "../areas/use-areas"
 import { addDays, formatDay, today } from "../dashboard/periods"
+import { actionsAt, type MarketingAction } from "../marketing/marketing-actions"
+import { MarketingDialog } from "../marketing/marketing-dialog"
+import { useMarketingActions } from "../marketing/use-marketing"
 import { homeAddress, type MonteurHome } from "../monteurs/monteur-homes"
 import { MonteursDialog } from "../monteurs/monteurs-dialog"
 import { useMonteurHomes } from "../monteurs/use-monteurs"
@@ -74,6 +79,12 @@ const PERIODS = [
 
 /** The colour of a monteur's pin: clear of the blue shades and the red and green of areas given out. */
 const MONTEUR_PIN = "#d97706"
+
+/** Storingen solved: violet, clear of the shades, the pins and the marketing areas. */
+const STORING_COLOR = "#7c3aed"
+
+/** How far back the storingen on the map go. */
+const STORINGEN_DAYS = 365
 
 /** From this zoom the PC5 areas in view are drawn over the PC4 areas. */
 const PC5_ZOOM = 11
@@ -209,6 +220,29 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
   const [editingMonteurs, setEditingMonteurs] = useState(false)
   const pins = isAdmin && shading === "kansen" && showMonteurs ? monteurs.data : undefined
 
+  // Where storingen were solved and marketing was done: for admins, on the same views.
+  const [showStoringen, setShowStoringen] = useState(false)
+  const storingenFrom = addDays(until, -(STORINGEN_DAYS - 1))
+  const storingen = useQuery({
+    queryKey: ["sales-issues", storingenFrom, until],
+    queryFn: () => getSalesIssues({ from: storingenFrom, to: until }),
+    enabled: isAdmin && shading === "kansen" && showStoringen,
+    staleTime: 15 * 60_000,
+  })
+  const issues = isAdmin && shading === "kansen" && showStoringen ? storingen.data?.issues : undefined
+  const marketing = useMarketingActions(isAdmin && shading === "kansen")
+  const [showMarketing, setShowMarketing] = useState(true)
+  const [editingMarketing, setEditingMarketing] = useState(false)
+  const marketingData = marketing.data
+  const marketingCodes = useMemo(
+    () => (isAdmin && shading === "kansen" && showMarketing ? (marketingData ?? []).flatMap((a) => a.postcodes) : []),
+    [isAdmin, shading, showMarketing, marketingData],
+  )
+  const shownActions = useMemo(
+    () => (isAdmin && shading === "kansen" && showMarketing ? (marketingData ?? []) : []),
+    [isAdmin, shading, showMarketing, marketingData],
+  )
+
   const query = mode === "sales" ? sales : kansen
   const salesMap = sales.data?.map
   const opportunities = kansen.data?.view
@@ -339,21 +373,31 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
             }
           }
         : undefined,
-      area:
-        mode === "sales"
-          ? (postcode) => salesPopup(postcode, salesAreas.get(postcode), names)
-          : (postcode) => kansenPopup(postcode, kansenAreas.get(postcode), woz),
+      area: (postcode) =>
+        withActions(
+          mode === "sales"
+            ? salesPopup(postcode, salesAreas.get(postcode), names)
+            : kansenPopup(postcode, kansenAreas.get(postcode), woz),
+          shownActions,
+          postcode,
+        ),
       detail: (postcode, at) => {
         const area = current[at].get(postcode)
         if (!area) return null
         if (at === "pc5") {
-          return mode === "sales"
-            ? salesPc5Popup(area as SalesStreet, names)
-            : kansenPc5Popup(area as OpportunityDetail)
+          return withActions(
+            mode === "sales" ? salesPc5Popup(area as SalesStreet, names) : kansenPc5Popup(area as OpportunityDetail),
+            shownActions,
+            postcode,
+          )
         }
-        return mode === "sales"
-          ? salesStreetPopup(area as SalesStreet, names)
-          : kansenStreetPopup(area as OpportunityDetail)
+        return withActions(
+          mode === "sales"
+            ? salesStreetPopup(area as SalesStreet, names)
+            : kansenStreetPopup(area as OpportunityDetail),
+          shownActions,
+          postcode,
+        )
       },
     }
   }, [
@@ -374,6 +418,7 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
     yearDetail,
     yearStreets,
     given.data,
+    shownActions,
   ])
 
   return (
@@ -445,6 +490,31 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
                 >
                   <PencilIcon />
                 </Button>
+                <Button
+                  size="sm"
+                  variant={showStoringen ? "default" : "outline"}
+                  aria-pressed={showStoringen}
+                  onClick={() => setShowStoringen(!showStoringen)}
+                >
+                  <WrenchIcon /> Storingen
+                  {issues ? ` (${issues.reduce((sum, issue) => sum + issue.count, 0)})` : ""}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={showMarketing ? "default" : "outline"}
+                  aria-pressed={showMarketing}
+                  onClick={() => setShowMarketing(!showMarketing)}
+                >
+                  <MegaphoneIcon /> Marketing{marketingData ? ` (${marketingData.length})` : ""}
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Marketingacties beheren"
+                  onClick={() => setEditingMarketing(true)}
+                >
+                  <PencilIcon />
+                </Button>
               </div>
             )}
           </>
@@ -469,6 +539,8 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
           popup={popup}
           overlay={overlay}
           pins={pins}
+          issues={issues}
+          marketingCodes={marketingCodes}
           fitTo={focus?.bounds ?? null}
           onView={setView}
           onDrawing={setDrawing}
@@ -533,6 +605,7 @@ export function SalesMapPage({ onBack, isAdmin = false, assign, focus }: Props) 
         />
       )}
       {editingMonteurs && <MonteursDialog homes={monteurs.data ?? []} onClose={() => setEditingMonteurs(false)} />}
+      {editingMarketing && <MarketingDialog actions={marketingData ?? []} onClose={() => setEditingMarketing(false)} />}
     </div>
   )
 }
@@ -598,6 +671,10 @@ type MapProps = {
   overlay: Overlay
   /** The monteurs' homes to pin, if any. */
   pins: MonteurHome[] | undefined
+  /** Where storingen were solved, if shown. */
+  issues: SalesIssue[] | undefined
+  /** The postcodes of the marketing actions shown. */
+  marketingCodes: string[]
   /** Where the map opens instead of the whole country. */
   fitTo: Bounds | null
   /** Called a moment after the map stops moving. */
@@ -628,6 +705,8 @@ function SalesMap({
   popup,
   overlay,
   pins,
+  issues,
+  marketingCodes,
   fitTo,
   onView,
   onDrawing,
@@ -671,6 +750,15 @@ function SalesMap({
           pc4: postcodeSource("pc4"),
           pc5: postcodeSource("pc5"),
           pc6: postcodeSource("pc6"),
+          // Near each other they merge into one circle of their sum, so the country stays readable.
+          storingen: {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+            cluster: true,
+            clusterRadius: 36,
+            clusterMaxZoom: 14,
+            clusterProperties: { total: ["+", ["get", "count"]] },
+          },
         },
         layers: [
           { id: "background", type: "raster", source: "background" },
@@ -700,6 +788,28 @@ function SalesMap({
           ]),
           ...LEVELS.flatMap((level) => overlayLayers(level, MIN_ZOOM[level], MAX_ZOOM[level])),
           { id: "labels", type: "raster", source: "labels", minzoom: PC5_ZOOM },
+          {
+            id: "storingen",
+            type: "circle",
+            source: "storingen",
+            paint: {
+              "circle-color": STORING_COLOR,
+              "circle-opacity": 0.65,
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 1.5,
+              "circle-radius": [
+                "interpolate",
+                ["linear"],
+                ["coalesce", ["get", "total"], ["get", "count"]],
+                1,
+                6,
+                20,
+                12,
+                200,
+                22,
+              ],
+            },
+          },
         ],
       },
     })
@@ -797,6 +907,17 @@ function SalesMap({
       if ((event.originalEvent.target as Element).closest(".maplibregl-marker")) return void info.remove()
       const level = shownRef.current
       const pick = popup.current.pick
+      // A circle of storingen: one street says what happened there, merged ones zoom in. Picking goes through them.
+      const [storing] = pick ? [] : map.queryRenderedFeatures(event.point, { layers: ["storingen"] })
+      if (storing) {
+        if (storing.properties.cluster) {
+          return void map.easeTo({ center: event.lngLat, zoom: map.getZoom() + 2 })
+        }
+        return void info
+          .setLngLat(event.lngLat)
+          .setDOMContent(storingPopup(storing.properties as SalesIssue))
+          .addTo(map)
+      }
       if (pick) {
         info.remove()
         const hit = target(event.point)
@@ -883,6 +1004,25 @@ function SalesMap({
     )
     return () => markers.forEach((marker) => marker.remove())
   }, [pins, loaded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    const source = map.getSource("storingen") as maplibregl.GeoJSONSource
+    source.setData({
+      type: "FeatureCollection",
+      features: (issues ?? []).map((issue) => ({
+        type: "Feature",
+        properties: { postcode: issue.postcode, count: issue.count, lastOn: issue.lastOn },
+        geometry: { type: "Point", coordinates: [issue.lon, issue.lat] },
+      })),
+    })
+  }, [issues, loaded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (map && loaded) applyMarketing(map, LEVELS, marketingCodes)
+  }, [marketingCodes, loaded])
 
   // Opening on an area: once, when the map is ready.
   useEffect(() => {
@@ -1084,6 +1224,25 @@ function kansenStreetPopup(street: OpportunityDetail): HTMLElement {
   if (street.open !== undefined && street.households !== undefined) {
     add("div", `${street.open} van ${street.households} huishoudens nog geen klant`)
     if (street.wozIndex) add("div", `WOZ ${street.wozIndex}% van het gemeentegemiddelde`, "text-muted-foreground")
+  }
+  return root
+}
+
+function storingPopup(issue: Pick<SalesIssue, "postcode" | "count" | "lastOn">): HTMLElement {
+  const [root, add] = popupRoot()
+  add("div", pc6Label(issue.postcode), "font-semibold")
+  add("div", `${issue.count} ${issue.count === 1 ? "storing" : "storingen"} verholpen`)
+  add("div", `Laatste op ${formatDay(issue.lastOn)} ${issue.lastOn.slice(0, 4)}`, "text-muted-foreground")
+  return root
+}
+
+/** Adds the marketing actions in an area to its popup. */
+function withActions(root: HTMLElement, actions: MarketingAction[], postcode: string): HTMLElement {
+  for (const action of actionsAt(actions, postcode)) {
+    const line = document.createElement("div")
+    line.textContent = `${action.kind} · ${formatDay(action.doneOn)} ${action.doneOn.slice(0, 4)}`
+    line.className = "pt-1 font-medium text-teal-700"
+    root.append(line)
   }
   return root
 }

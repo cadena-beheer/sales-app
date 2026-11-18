@@ -66,5 +66,4 @@ where c.CompanyID = 1 and c.Recruiter_Id is not null and c.Cancelled = 0
 ## Days until afval
 
 `afvalDelays` has per sale day, kind (`opgezegd` or `bank`) and number of days how many sales fell away. Cancellations
-count from `CancelDate`, which is when the office entered them, so it includes their lag of a few days. The `kpi`
-function removes it for anyone but admins.
+count from `CancelDate`, which is when the office entered them, so it includes their lag of a few days.

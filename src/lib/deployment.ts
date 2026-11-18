@@ -6,11 +6,11 @@ export const IS_TEST_DEPLOYMENT = import.meta.env.VITE_VERCEL_GIT_COMMIT_REF ===
 
 export const TEST_DEPLOYMENT_HEADER = "x-test-deployment"
 
-/** The results page is still being tried out: only on the test deployment and in development. */
-export const SHOW_RESULTS = IS_TEST_DEPLOYMENT || import.meta.env.DEV
+/** The sales map is still being tried out: only on the test deployment and in development. */
+export const SHOW_MAP = IS_TEST_DEPLOYMENT || import.meta.env.DEV
 
 /** Giving out areas ("Werkgebieden", "Mijn gebieden", "Toewijzen" on the map) is tried out in the same places. */
-export const SHOW_AREAS = SHOW_RESULTS
+export const SHOW_AREAS = SHOW_MAP
 
 /**
  * Testing only: a manager who opens a werver's areas from the planning walks them as that werver, so their doors

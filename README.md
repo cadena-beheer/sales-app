@@ -112,24 +112,50 @@ background (`EdgeRuntime.waitUntil`), waiting up to 60 s for the answer. A timeo
 resent automatically, because the sale may have arrived; check ZMAdmin and set `onboarding_status` back to null to
 have `sync-onboarding` resend it.
 
-**Dashboard.** Account menu → "Mijn resultaten" (recruiters) or "Resultaten team" (admins), only on the test
-deployment and in development for now. The `kpi` function
-reads ZMAdmin through the Contracts API on TEST (`GET http://test.zekerenmobiel.nl/Sales/2026.1/Stats`, ZMSuite
-branch `Jan/feature/sales-stats`):
+**Dashboard.** Account menu → "Mijn resultaten" (recruiters) or "Resultaten" (admins). The `kpi` function reads ZMAdmin
+through the Contracts API (`GET https://contracts.zekerenmobiel.nl/Sales/2026.1/Stats`; the test deployment reads
+`http://test.zekerenmobiel.nl/Sales/2026.1/Stats`):
 gross sales per day and recruiter, with each cancellation counted on the day of the sale, plus the cancelled
 customers with their reason. A recruiter always gets their own wervernr (which must be their ZMAdmin recruiter
 code); only admins may pick another recruiter or the whole team. "Opzeggingen bijgewerkt t/m" is the most recent
 cancellation entered in ZMAdmin; periods ending less than four weeks before that are hatched as not complete. The
 app loads a year at a time going back ("Eerder"). Without `STATS_API_KEY` the function returns
 made-up numbers and the page says so. In development, open `http://localhost:5173/?demo` (sales manager) or
-`?demo=werver` to see the dashboard with demo data without logging in, and `?demo&beheer` for the admin page.
+`?demo=werver` to see the dashboard with demo data without logging in, `?demo&beheer` for the admin page and
+`?demo&formulier` for the form, where any photo gives a scan with a week-old date.
 
 **Bankafval.** A sale that was not cancelled but never paid. `Stats` sends it per sale day (`bankAfval`), and for one
-recruiter the customers behind it; it counts in Uitval and not in Netto. Until the endpoint sends it, the page looks as
-it did without it. Admins also see after how many days sales fell away (`afvalDelays`, removed by `statsFor` for
-anyone else). See `handoff/zmsuite-woz-index-bankafval.md`.
+recruiter the customers behind it; it counts in Afval and not in Netto. Until the endpoint sends it, the page looks as
+it did without it. Everyone also sees after how many days their sales fell away (`afvalDelays`; a recruiter only gets
+their own, because the function asks the endpoint for their wervernr). See `handoff/zmsuite-woz-index-bankafval.md`.
 
-**Sales map.** Account menu → "Verkoopkaart", shown together with the dashboard. Everyone sees where the whole
+**Page structure.** Everything on the page is called Afval, split one way at a time: netto first, then the last six weeks
+or months (netto, opgezegd and bankafval as columns, netto's number inside and the afval percentage above), then all the afval of
+the selected period by kind, by time after the sale and by reason, with "Verkeerd voorgelicht" always listed,
+and finally who it is (per werver, or the customers of one recruiter). Every percentage is a share of the bruto sales.
+The first card shows netto, the afval percentage with its count, and bruto, largest to smallest.
+When and why, and the customers, start with their first rows and a button to show all. For one recruiter the first card's bar in the month view is netto alone, up
+to the next bonus of the calendar month (50 netto, then 60, 70, up to 100), a line under it says which bonus was reached and how many are still needed, and the month chart has a line at 50. The page
+opens on the month view, because the bonus is per month.
+
+**Addresses.** Every page has its own path, so the browser's back button moves between pages (`src/lib/navigation.ts`).
+On the results, picking a recruiter is a step of its own (`/resultaten?werver=0212BB`), so back returns to the team;
+the period only changes the address (`per=week`, `periode=2026-W41` or `periode=2026-10`), so a reload or a shared
+link keeps it but back skips it. A recruiter's own results ignore `werver`.
+
+**Afgevallen klanten.** Shown by street and house number, with a button to Street View
+(`handoff/zmsuite-afval-address.md`); a row without an address shows the name and no button. Google needs a location
+for Street View, so the phone asks PDOK for it for the rows it shows; without an answer the button searches the address
+in Google Maps.
+
+**Netto.** Bruto minus the afval within 14 days of the sale (`COUNTED_DAYS`), because only that counts for the bonus; the
+first card, the chart and the team table's Netto use it. "Alle afval" shows everything, later afval included. A month's
+bonus is final two weeks after the month ends. Without `afvalDelays` all afval counts, rather than netto looking like
+bruto.
+The team table's "≤ 14 d." and "Voorgel." columns need `recruiter` on `afvalDelays` and `reasons`; without it they stay
+away.
+
+**Sales map.** Account menu → "Verkoopkaart", only on the test deployment and in development for now. Everyone sees where the whole
 team sold in the last 30 days, 90 days or year, cancelled sales included. The `sales-map` function reads
 `GET http://test.zekerenmobiel.nl/Sales/2026.1/Map` with `STATS_API_KEY`: sales per full postcode, answered from the
 same in-memory cache as the stats (refreshed every 15 minutes), and sums them to PC4 areas. Colour is the age of an
@@ -150,6 +176,10 @@ computed in the backend; the app only draws what it receives.
 **Monteurs.** On "Kansen" and "Toewijzen" admins also see pins where the monteurs live, and enter them with the
 pencil next to the "Monteurs" button. The location comes from PDOK when the address is entered. These are home
 addresses: row level security on `monteur_homes` lets only admins read or change them.
+
+**Storingen and marketing.** Also for admins on those views. "Storingen" shows where storingen were solved in the last
+year, per street and never per address (`sales-issues` function, `…/Sales/2026.1/Issues`; demo numbers until that
+endpoint exists). "Marketing" tints the areas of actions an admin entered with the pencil (`marketing_actions`).
 
 **Zooming in.** From zoom 11 the map shows PC5 areas, from zoom 13 the streets (PC6), each asked for per view
 (`…/Map/Pc5`, `…/Map/Pc6`, `…/Opportunities/Pc5`, `…/Opportunities/Pc6` with `bbox`). A PC5 is ranked by its
@@ -212,7 +242,7 @@ as-is in code so they match the Google Sheet and the back office.
 | contracttype                   | Service or Zakelijk (business)                                                 |
 | betaaltermijn / betaalperiode  | Payment term and method (machtiging = direct debit, acceptgiro = payment slip) |
 | opmerkingen                    | Remarks (digital only, not on the paper form)                                  |
-| bruto / netto                  | Sales written / sales that were not cancelled and were paid                    |
+| bruto / netto                  | Sales written / sales minus what fell away within 14 days                      |
 | opzegging / opgezegd / uitval  | Cancellation / cancelled / share of the sales that was cancelled or not paid   |
 | bankafval                      | Sale that was not cancelled but never paid                                     |
 | monteur                        | Service technician                                                             |

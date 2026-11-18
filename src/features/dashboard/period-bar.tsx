@@ -8,9 +8,9 @@ import type { Granularity } from "./periods"
 type Props = {
   granularity: Granularity
   onGranularity: (granularity: Granularity) => void
-  /** "Week 41" or "Oktober 2026". */
+  /** "week 41" or "oktober". */
   title: string
-  /** "5 – 11 okt 2026" for a week; empty for a month. */
+  /** "5 – 11 okt 2026" for a week; "2026" for a month. */
   subtitle: string
   canPrevious: boolean
   canNext: boolean
@@ -31,28 +31,7 @@ export function PeriodBar(props: Props) {
   return (
     <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 border-b bg-background/95 backdrop-blur">
       <div className={`mx-auto flex items-center gap-2 px-4 py-2 ${PAGE_WIDTH}`}>
-        <div
-          role="group"
-          aria-label="Alle cijfers per week of per maand"
-          className="flex shrink-0 rounded-lg bg-muted p-1"
-        >
-          {(["week", "month"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={granularity === option}
-              onClick={() => onGranularity(option)}
-              className={cn(
-                "h-9 rounded-md px-2.5 text-sm font-medium text-muted-foreground",
-                granularity === option && "bg-background text-foreground shadow-sm",
-              )}
-            >
-              {option === "week" ? "Week" : "Maand"}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex min-w-0 flex-1 items-center lg:w-96 lg:flex-none">
+        <div className="flex min-w-0 flex-1 items-center">
           <Button
             variant="ghost"
             size="icon"
@@ -64,7 +43,7 @@ export function PeriodBar(props: Props) {
             {loadingPrevious ? <Spinner /> : <ChevronLeftIcon className="size-5" />}
           </Button>
           <div className="flex min-w-0 flex-1 flex-col items-center leading-tight" aria-live="polite">
-            <span className="truncate text-sm font-semibold">{title}</span>
+            <span className="truncate text-lg font-semibold first-letter:uppercase lg:text-xl">{title}</span>
             {subtitle && <span className="truncate text-xs text-muted-foreground">{subtitle}</span>}
           </div>
           {canNext && (
@@ -87,6 +66,27 @@ export function PeriodBar(props: Props) {
           >
             <ChevronRightIcon className="size-5" />
           </Button>
+        </div>
+
+        <div
+          role="group"
+          aria-label="Alle cijfers per week of per maand"
+          className="flex shrink-0 rounded-lg bg-muted p-1"
+        >
+          {(["week", "month"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={granularity === option}
+              onClick={() => onGranularity(option)}
+              className={cn(
+                "h-9 rounded-md px-2.5 text-sm font-medium text-muted-foreground",
+                granularity === option && "bg-background text-foreground shadow-sm",
+              )}
+            >
+              {option === "week" ? "Week" : "Maand"}
+            </button>
+          ))}
         </div>
       </div>
     </div>

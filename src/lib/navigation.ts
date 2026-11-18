@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react"
 import type { AreaAssignment, AreaMember, AssignStart } from "@/features/areas/areas"
+import type { Granularity } from "@/features/dashboard/periods"
 
 /**
  * The app's pages as browser history: every page has its own address, opening one adds a history entry, so the
  * browser's (and the phone's) back and forward buttons move between pages. What a page was opened with (the area
  * on the map, the werver a manager looks at) travels in the entry's state; after a reload only the address is left,
- * and a page that needs more than it holds opens one step up.
+ * and a page that needs more than it holds opens one step up. What a reload should keep but back should skip, like the
+ * period on the results, changes the current entry in place (`replace`).
  */
 
 export type View = "form" | "dashboard" | "map" | "sales" | "admin" | "planning" | "areas" | "walk" | "tick"
@@ -13,11 +15,15 @@ export type View = "form" | "dashboard" | "map" | "sales" | "admin" | "planning"
 /** How the map opens: plain, giving out an area, or on one area. */
 export type MapStart = { assign?: AssignStart; focus?: AreaAssignment }
 
+/** The week or month the results show; without a key the current one. */
+export type ResultsPeriod = { granularity: Granularity; key?: string }
+
 export type Page = {
   view: View
   map?: MapStart
-  /** The werver whose areas a manager opened from the planning. */
+  /** The werver whose areas a manager opened from the planning, or whose results from the team. */
   viewedAs?: AreaMember
+  period?: ResultsPeriod
   /** The area being walked door by door; on the form, the walk it was opened from. */
   walking?: AreaAssignment
   /** The area a sales manager ticks off. */
@@ -42,7 +48,11 @@ const PATHS: Record<View, string> = {
 /** The address of a page: its path, and what of its state an address can hold. */
 export function urlOf(page: Page): string {
   const params = new URLSearchParams()
-  if (page.viewedAs && (page.view === "areas" || page.view === "walk")) params.set("werver", page.viewedAs.wervernr)
+  if (page.viewedAs && (page.view === "areas" || page.view === "walk" || page.view === "dashboard")) {
+    params.set("werver", page.viewedAs.wervernr)
+  }
+  if (page.view === "dashboard" && page.period?.granularity === "week") params.set("per", "week")
+  if (page.view === "dashboard" && page.period?.key) params.set("periode", page.period.key)
   if (page.view === "map" && page.map?.focus) params.set("gebied", page.map.focus.id)
   if (page.view === "map" && page.map?.assign) params.set("toewijzen", "")
   if (page.view === "walk" && page.walking) params.set("gebied", page.walking.id)
@@ -63,7 +73,18 @@ export function pageFromUrl(pathname: string, search: string): Page {
   if (view === "walk") return { view: "areas", viewedAs }
   if (view === "tick") return { view: "planning" }
   if (view === "map") return { view: "map", map: {} }
+  if (view === "dashboard") return { view, viewedAs, period: periodFromUrl(search) }
   return { view, viewedAs }
+}
+
+/** `per=week` and `periode=2026-W41` or `periode=2026-10`; a key that does not fit the granularity is left out. */
+function periodFromUrl(search: string): ResultsPeriod | undefined {
+  const params = new URLSearchParams(search)
+  const granularity: Granularity = params.get("per") === "week" ? "week" : "month"
+  const key = params.get("periode") ?? ""
+  const fits = granularity === "week" ? /^\d{4}-W\d{2}$/.test(key) : /^\d{4}-\d{2}$/.test(key)
+  if (granularity === "month" && !fits) return undefined
+  return { granularity, key: fits ? key : undefined }
 }
 
 function isEntry(state: unknown): state is Entry {
@@ -72,7 +93,8 @@ function isEntry(state: unknown): state is Entry {
 
 /**
  * The current page and the ways to change it. `go` opens a page as a new history entry; `back` returns to the
- * previous one, or, when the app was opened right on this page, replaces it with `fallback`.
+ * previous one, or, when the app was opened right on this page, replaces it with `fallback`; `replace` changes the
+ * current entry without adding one.
  */
 export function useNavigation(initial: () => Page) {
   const [entry, setEntry] = useState<Entry>(() => {
@@ -111,8 +133,17 @@ export function useNavigation(initial: () => Page) {
     [entry.depth],
   )
 
+  const replace = useCallback(
+    (page: Page) => {
+      const next = { ...page, depth: entry.depth }
+      window.history.replaceState(next, "", keepDemo(urlOf(next)))
+      setEntry(next)
+    },
+    [entry.depth],
+  )
+
   // The depth tells entries apart: a page opened again is a new entry, so it can start fresh.
-  return { page: entry as Page, depth: entry.depth, go, back }
+  return { page: entry as Page, depth: entry.depth, go, back, replace }
 }
 
 /** Dev only: keeps `?demo…` on every address, so a reload stays in the demo. */

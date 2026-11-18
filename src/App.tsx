@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import type { Session } from "@supabase/supabase-js"
 import { Toaster } from "@/components/ui/sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { AdminPage } from "@/features/admin/admin-page"
@@ -28,12 +29,13 @@ import { supabase } from "@/lib/supabase"
 // Loaded on first use: MapLibre is large and the sales form should not wait for it.
 const SalesMapPage = lazy(() => import("@/features/sales-map/map-page").then((m) => ({ default: m.SalesMapPage })))
 
-/** Dev only: `?demo&verkopen`, `?demo&kaart`, `?demo&beheer`, `?demo&werkgebieden` or `?demo=werver&gebieden` opens that page. */
+/** Dev only: `?demo&verkopen`, `?demo&kaart`, `?demo&beheer`, `?demo&formulier`, `?demo&werkgebieden` or `?demo=werver&gebieden` opens that page. */
 function demoView(): View {
   const params = new URLSearchParams(window.location.search)
   if (params.has("verkopen")) return "sales"
   if (params.has("kaart")) return "map"
   if (params.has("beheer")) return "admin"
+  if (params.has("formulier")) return "form"
   if (params.has("werkgebieden")) return "planning"
   if (params.has("gebieden")) return "areas"
   return "dashboard"
@@ -49,8 +51,8 @@ const FORM: Page = { view: "form" }
 
 export default function App() {
   const { session, loading, needsPassword, isInvite, passwordSet } = useSession()
-  const { page, depth, go, back } = useNavigation(() =>
-    import.meta.env.DEV && DEMO_MODE
+  const { page, depth, go, back, replace } = useNavigation(() =>
+    import.meta.env.DEV && DEMO_MODE && window.location.pathname === "/"
       ? { view: demoView(), map: {} }
       : pageFromUrl(window.location.pathname, window.location.search),
   )
@@ -93,6 +95,22 @@ export default function App() {
       // Only this device: a global sign-out would also end the recruiter's sessions on other devices.
       await supabase.auth.signOut({ scope: "local" })
     },
+  }
+
+  /** Picking a recruiter is a page of its own, so back returns to the team; the period only changes the address. */
+  function dashboard(profile: Profile | undefined) {
+    return (
+      <DashboardPage
+        profile={profile}
+        picked={viewedAs?.wervernr ?? null}
+        onPick={(wervernr) =>
+          go({ view: "dashboard", viewedAs: wervernr ? { wervernr, name: wervernr } : undefined, period: page.period })
+        }
+        period={page.period}
+        onPeriod={(period) => replace({ ...page, period })}
+        onBack={() => back(FORM)}
+      />
+    )
   }
 
   /** The map and the area pages, which lead to each other; null for any other view. */
@@ -162,14 +180,24 @@ export default function App() {
       if (areaView) return areaView
       if (view === "sales") return <SalesListPage profile={demoProfile} userId={undefined} onBack={() => back(FORM)} />
       if (view === "admin") return <AdminPage currentUserId="demo-jan" onBack={() => back(FORM)} />
-      return <DashboardPage profile={demoProfile} onBack={() => back(FORM)} />
+      if (view === "form") {
+        return (
+          <FormPage
+            session={{ user: { id: "demo-jan" } } as Session}
+            outboxOpen={outboxOpen}
+            onOutboxOpenChange={setOutboxOpen}
+            onOpenSales={() => go({ view: "sales" })}
+          />
+        )
+      }
+      return dashboard(demoProfile)
     }
     if (loading) return pageSpinner
     if (!session) return <LoginPage />
     if (needsPassword) {
       return <SetPasswordPage email={session.user.email ?? ""} isInvite={isInvite} onDone={passwordSet} />
     }
-    if (view === "dashboard") return <DashboardPage profile={profile} onBack={() => back(FORM)} />
+    if (view === "dashboard") return dashboard(profile)
     const areaView = areaViews(profile)
     if (areaView) return areaView
     if (view === "sales") {

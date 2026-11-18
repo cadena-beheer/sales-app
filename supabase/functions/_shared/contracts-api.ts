@@ -4,17 +4,21 @@ import { optionalEnv } from "./env.ts"
 // contracts.zekerenmobiel.nl, unset or "test" uses test.zekerenmobiel.nl, and ONBOARDING_API_KEY must hold the key
 // for that environment. Sales from the test deployment (test = true, see test-request.ts) have their own switch,
 // ONBOARDING_TEST_API_ENV, which defaults to TEST whatever ONBOARDING_API_ENV says.
-// The stats and map endpoints are only on TEST so far, so the dashboard and the map always read TEST, with
-// STATS_API_KEY as TEST's key.
+// The dashboard reads production, and TEST from the test deployment. The map endpoints are only used by the test
+// deployment, so they always read TEST. All of them use STATS_API_KEY.
 
 const ONBOARDING_URL = {
   test: "http://test.zekerenmobiel.nl/Onboarding/2026.1/Appeee/Paper",
   production: "https://contracts.zekerenmobiel.nl/Onboarding/2026.1/Appeee/Paper",
 }
 
-const STATS_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Stats"
+const STATS_URL = {
+  test: "http://test.zekerenmobiel.nl/Sales/2026.1/Stats",
+  production: "https://contracts.zekerenmobiel.nl/Sales/2026.1/Stats",
+}
 const MAP_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Map"
 const OPPORTUNITIES_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Opportunities"
+const ISSUES_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Issues"
 
 function environment(secret: string): "test" | "production" {
   const value = optionalEnv(secret) ?? "test"
@@ -35,8 +39,8 @@ export function onboardingEnvironment(test: boolean): "test" | "production" {
 }
 
 /** GET endpoint with sales and cancellations for the dashboard. */
-export function statsUrl(): string {
-  return STATS_URL
+export function statsUrl(test: boolean): string {
+  return test ? STATS_URL.test : STATS_URL.production
 }
 
 /** GET endpoint with sales per postcode for the map; on TEST and with STATS_API_KEY, like the stats. */
@@ -50,4 +54,9 @@ export function mapUrl(): string {
  */
 export function opportunitiesUrl(pc4?: string): string {
   return pc4 ? `${OPPORTUNITIES_URL}/${pc4}` : OPPORTUNITIES_URL
+}
+
+/** GET endpoint with the storingen solved per street, for the map. TEST, STATS_API_KEY. */
+export function issuesUrl(): string {
+  return ISSUES_URL
 }

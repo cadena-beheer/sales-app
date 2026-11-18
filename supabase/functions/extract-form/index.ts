@@ -4,15 +4,28 @@ import { z } from "zod"
 import { requireUser } from "../_shared/auth.ts"
 import { encodeBase64 } from "../_shared/base64.ts"
 import { optionalEnv } from "../_shared/env.ts"
-import { extractionSchema, type Extraction } from "../_shared/form-schema.ts"
+import { scanReadingSchema, type ScanReading, type ScanResponse } from "../_shared/form-schema.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
-import { toScanResult } from "../_shared/scan-result.ts"
+import { toScanCorners, toScanResult } from "../_shared/scan-result.ts"
 import { SCANS_BUCKET } from "../_shared/storage.ts"
 
 // Opus reads handwriting in the boxed fields (IBAN, phone) far more reliably than Sonnet; low effort keeps the scan fast.
 const MODEL = "claude-opus-5-5"
 
 const SYSTEM_PROMPT = `Je leest foto's van ingevulde (vaak handgeschreven) Nederlandse verkoopformulieren van Zeker en Mobiel uit en zet de gegevens om naar gestructureerde velden.
+
+Leesbaarheid (beoordeel dit eerst):
+- Beoordeel of de voorgedrukte tekst van het formulier (kopjes, labels, de kleine lettertjes) te lezen is. Het gaat om de foto, niet om hoe netjes er geschreven is.
+- "goed": de voorgedrukte tekst is grotendeels te lezen, ook als een klein deel wat donker, licht of onscherp is.
+- Kies alleen een probleem als het formulier daardoor niet betrouwbaar uit te lezen is: "te_donker"; "te_licht" (overbelicht, of een felle schittering over een groot deel); "onscherp" (bewogen of niet scherpgesteld); "afgesneden" (een flink deel van het formulier valt buiten de foto); "geen_formulier" (er staat geen verkoopformulier op de foto).
+- Lees de velden in alle gevallen zo goed mogelijk uit.
+
+Hoeken van het papier:
+- hoeken: de vier hoekpunten van het vel papier (het hele vel, niet alleen het bedrukte deel), als fractie van de breedte (x) en de hoogte (y) van de foto: x = 0 is de linkerrand en 1 de rechterrand, y = 0 is de bovenrand en 1 de onderrand.
+- linksboven, rechtsboven, rechtsonder en linksonder zijn de hoeken zoals het formulier rechtop gelezen wordt, ook als de foto gedraaid of op z'n kop is genomen.
+- Valt een hoek net buiten de foto, schat dan waar hij ligt. null als de randen van het papier niet te zien zijn.
+
+Velden (formulier):
 
 Vakjesvelden:
 - Voorletters, huisnummer, postcode, telefoonnummer en IBAN staan op het formulier in een rij vakjes die van elkaar gescheiden zijn door voorgedrukte verticale streepjes (|). Die streepjes horen bij het formulier en zijn GEEN tekens: lees ze nooit als "1", "I", "l" of "|".
@@ -43,10 +56,10 @@ Regels:
 - geslacht, contractType en betaalperiode: kies exact een van de toegestane waarden als die duidelijk is aangevinkt of vermeld.`
 
 // Structured output schema for Claude, derived from the shared definition (minus the $schema marker).
-const { $schema: _, ...EXTRACTION_JSON_SCHEMA } = z.toJSONSchema(extractionSchema)
+const { $schema: _, ...SCAN_JSON_SCHEMA } = z.toJSONSchema(scanReadingSchema)
 
 // Returned when ANTHROPIC_API_KEY is not configured, so the scan flow can be demonstrated end to end.
-const MOCK_EXTRACTION: Extraction = {
+const MOCK_EXTRACTION: ScanReading["formulier"] = {
   datum: "",
   klantnummer: "100234",
   geslacht: "Vrouw",
@@ -76,16 +89,22 @@ serve(async (req) => {
   }
 
   const apiKey = optionalEnv("ANTHROPIC_API_KEY")
-  const [extraction, scanContactFields] = await Promise.all([
+  const [reading, scanContactFields] = await Promise.all([
     apiKey ? readWithClaude(supabase, path, apiKey) : mockRead(),
     canScanContactFields(supabase, user.id),
   ])
-  // The photo stays: the app sends its path with the form, and onboarding files it with the customer in ZMAdmin.
-  // It is deleted once onboarding has accepted the sale, or after SCAN_RETENTION_DAYS (see sync-onboarding).
-  return json({ fields: toScanResult(extraction, scanContactFields), mock: !apiKey })
+  // The photo stays until SCAN_RETENTION_DAYS (see sync-onboarding). The app uploads a scanner-style copy made with
+  // the corners and sends that one with the form, for onboarding to file with the customer in ZMAdmin.
+  const response: ScanResponse = {
+    fields: toScanResult(reading.formulier, scanContactFields),
+    mock: !apiKey,
+    problem: reading.leesbaarheid === "goed" ? null : reading.leesbaarheid,
+    corners: toScanCorners(reading.hoeken),
+  }
+  return json(response)
 })
 
-async function readWithClaude(supabase: SupabaseClient, path: string, apiKey: string): Promise<Extraction> {
+async function readWithClaude(supabase: SupabaseClient, path: string, apiKey: string): Promise<ScanReading> {
   const { data: file, error } = await supabase.storage.from(SCANS_BUCKET).download(path)
   if (error || !file) throw new HttpError(404, "Foto niet gevonden")
 
@@ -105,7 +124,7 @@ async function readWithClaude(supabase: SupabaseClient, path: string, apiKey: st
     fallbacks: "default",
     output_config: {
       effort: "low",
-      format: { type: "json_schema", schema: EXTRACTION_JSON_SCHEMA },
+      format: { type: "json_schema", schema: SCAN_JSON_SCHEMA },
     },
     system: SYSTEM_PROMPT,
     messages: [
@@ -124,7 +143,7 @@ async function readWithClaude(supabase: SupabaseClient, path: string, apiKey: st
   const text = response.content.find((block) => block.type === "text")
   if (!text || text.type !== "text") throw new HttpError(502, "Geen resultaat ontvangen")
 
-  const parsed = extractionSchema.safeParse(JSON.parse(text.text))
+  const parsed = scanReadingSchema.safeParse(JSON.parse(text.text))
   if (!parsed.success) throw new HttpError(502, "Onverwacht resultaat bij het uitlezen")
   return parsed.data
 }
@@ -137,9 +156,13 @@ async function canScanContactFields(supabase: SupabaseClient, userId: string): P
   return data?.scan_contact_fields === true
 }
 
-async function mockRead(): Promise<Extraction> {
+async function mockRead(): Promise<ScanReading> {
   await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY_MS))
-  return extractionSchema.parse({ ...MOCK_EXTRACTION, datum: amsterdamToday() })
+  return scanReadingSchema.parse({
+    leesbaarheid: "goed",
+    hoeken: null,
+    formulier: { ...MOCK_EXTRACTION, datum: amsterdamToday() },
+  })
 }
 
 /** Today's date in the Netherlands, yyyy-MM-dd: the edge function runs in UTC. */

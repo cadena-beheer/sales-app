@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { SendIcon } from "lucide-react"
 import type { FormValues } from "@shared/form-schema"
 import { PAGE_WIDTH } from "@/components/page-header"
@@ -28,12 +29,17 @@ type Props = {
   submitting: boolean
   /** Capitalization fix made while filling in a scanned form. */
   naamCorrection: NaamCorrection | null
+  /** The contract photo the form was filled in from, above everything else. */
+  photo: ReactNode
   onSubmit: (values: FormValues) => void
   onDiscard: () => void
 }
 
-/** The sales form itself: four sections (plus the werver for admins) and a fixed bottom bar with Wissen / Versturen. */
-export function SalesForm({ form, profile, submitting, naamCorrection, onSubmit, onDiscard }: Props) {
+/**
+ * The sales form itself: the contract photo, four sections (plus the werver for admins) and a fixed bottom bar with
+ * Wissen / Versturen.
+ */
+export function SalesForm({ form, profile, submitting, naamCorrection, photo, onSubmit, onDiscard }: Props) {
   const lookup = useAddressLookup(form)
   // Checked in the order of the form: first the date, then the address, then the IBAN.
   const iban = useIbanCheck(form, onSubmit)
@@ -50,6 +56,7 @@ export function SalesForm({ form, profile, submitting, naamCorrection, onSubmit,
       noValidate
       className={`mx-auto grid gap-4 p-4 pb-24 lg:grid-cols-2 lg:items-start ${PAGE_WIDTH}`}
     >
+      <div className="lg:col-span-2">{photo}</div>
       {profile?.isAdmin && (
         <div className="lg:col-span-2">
           <FormSection title="Werver">
