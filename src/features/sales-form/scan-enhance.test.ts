@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ScanCorners } from "@shared/form-schema"
-import { homography, project, usableCorners } from "./scan-enhance"
+import { cleanChannel, homography, project, usableCorners } from "./scan-enhance"
 
 const point = (x: number, y: number) => ({ x, y })
 
@@ -33,5 +33,23 @@ describe("usableCorners", () => {
     expect(usableCorners(crossed, 1000, 2000)).toBeNull()
     const tiny: ScanCorners = [point(0.4, 0.4), point(0.5, 0.4), point(0.5, 0.5), point(0.4, 0.5)]
     expect(usableCorners(tiny, 1000, 2000)).toBeNull()
+  })
+})
+
+describe("cleanChannel", () => {
+  // A photo of grey paper (200) under even light.
+  const paper = 200
+
+  it("lightens the paper halfway to white", () => {
+    expect(cleanChannel(paper, paper)).toBe(228)
+  })
+
+  it("keeps pencil (80% of the paper) apart from the paper, more than the photo does", () => {
+    const contrast = cleanChannel(paper, paper) - cleanChannel(0.8 * paper, paper)
+    expect(contrast).toBeGreaterThan(paper - 0.8 * paper)
+  })
+
+  it("keeps dark ink dark", () => {
+    expect(cleanChannel(0.15 * paper, paper)).toBeLessThan(20)
   })
 })

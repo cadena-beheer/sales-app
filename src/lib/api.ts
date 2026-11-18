@@ -132,10 +132,11 @@ export async function readScan(userId: string, photo: Blob): Promise<ScanRespons
     const { addDays } = await import("@/features/dashboard/periods")
     const { today } = await import("@/features/sales-form/form-defaults")
     await new Promise((resolve) => setTimeout(resolve, 600))
-    // A week-old paper form, so the date question shows; any photo will do. `?demo&onleesbaar` turns it down.
+    // A week-old paper form, so the date question shows; any photo will do. `?demo&onleesbaar` turns it down,
+    // `?demo&vaag` says the handwriting is faint.
     const fields = { datum: addDays(today(), -6), postcode: "3811AB", huisnummer: "12", klantnummer: "7000123" }
-    const problem = new URLSearchParams(window.location.search).has("onleesbaar") ? "te_donker" : null
-    return { fields, mock: true, problem, corners: null }
+    const problem = DEMO_PARAMS.has("onleesbaar") ? "te_donker" : null
+    return { fields, mock: true, problem, faintWriting: DEMO_PARAMS.has("vaag"), corners: null }
   }
   const path = await uploadScan(userId, photo)
   return invoke<ScanResponse>("extract-form", { path })
@@ -147,6 +148,9 @@ export async function readScan(userId: string, photo: Blob): Promise<ScanRespons
  * Dev only: open the app with `?demo` (sales manager) or `?demo=werver` to see the dashboard with made-up numbers
  * without logging in. `import.meta.env.DEV` is false in a production build, so none of this ships.
  */
+/** The address the app was opened with: navigation rewrites it, so demo switches are read once, at load. */
+const DEMO_PARAMS = new URLSearchParams(window.location.search)
+
 export const DEMO_MODE: "admin" | "werver" | null =
   import.meta.env.DEV && new URLSearchParams(window.location.search).has("demo")
     ? new URLSearchParams(window.location.search).get("demo") === "werver"

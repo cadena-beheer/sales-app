@@ -54,6 +54,8 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
   const [naamCorrection, setNaamCorrection] = useState<NaamCorrection | null>(null)
   const [scannedDate, setScannedDate] = useState<string | null>(null)
   const [rejection, setRejection] = useState<ScanRejection | null>(null)
+  // The form (rowId) whose scan Claude found faintly written: its fields need an extra careful check.
+  const [faintWritingFor, setFaintWritingFor] = useState<string | null>(null)
   // What "use anyway" continues with, and how many photos of which form were turned down.
   const pending = useRef<(() => Promise<void>) | null>(null)
   const rejected = useRef({ rowId: "", count: 0 })
@@ -117,6 +119,7 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
   /** Keeps a photo that could not be read (offline: `error` null), for the recruiter to fill the form in by hand. */
   async function keepUnread(photo: File, error: unknown) {
     latest.current++
+    setFaintWritingFor(null)
     await savePhoto(await enhanceScan(photo, null))
     form.setValue("scanPath", "", { shouldDirty: true })
     if (error === null) {
@@ -128,9 +131,11 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     }
   }
 
-  async function apply(photo: File, { fields, mock, corners }: ScanResponse) {
+  async function apply(photo: File, { fields, mock, corners, faintWriting }: ScanResponse) {
     const scan = ++latest.current
     const rowId = form.getValues("rowId")
+    // Older answers (before the function knew) have no faintWriting: then it is not faint.
+    setFaintWritingFor(faintWriting ? rowId : null)
     const copy = await enhanceScan(photo, corners)
     await savePhoto(copy)
     form.setValue("scanPath", "", { shouldDirty: true })
@@ -146,7 +151,8 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     await typeIntoForm(fields)
     if (scannedDateDiffers(fields.datum)) setScannedDate(fields.datum)
     if (mock) toast.info("Demo: voorbeeldgegevens ingevuld (Claude is nog niet gekoppeld)")
-    else toast.success("Formulier ingevuld — controleer de gegevens")
+    if (faintWriting) toast.warning("Het handschrift is vaag — controleer alle velden extra goed")
+    else if (!mock) toast.success("Formulier ingevuld — controleer de gegevens")
   }
 
   async function typeIntoForm(fields: ExtractedFields) {
@@ -199,6 +205,7 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     scannedDate,
     resolveScannedDate,
     rejection,
+    faintWritingFor,
     acceptAnyway,
     dismissRejection,
   }
