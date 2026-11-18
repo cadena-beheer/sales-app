@@ -15,13 +15,14 @@ export type Period = {
   bank: number
   /** Per step of AFVAL_AGES, how many sales fell away that long after the sale; zeros when that is not known. */
   aged: { opgezegd: number[]; bank: number[] }
-  /** The afval that counts against netto and the bonus: see COUNTED_DAYS. */
+  /** The afval that counts against netto and the bonus, and the only afval shown: see COUNTED_DAYS. */
   counted: { opgezegd: number; bank: number }
 }
 
 /**
- * Only what falls away this many days after the sale counts against netto and the bonus; later afval shows in the
- * breakdown but changes neither.
+ * Only cancellations within this many days after the sale count against netto and the bonus, and only those are shown:
+ * later ones are about the customer, not the sale. Bankafval always counts, whenever it comes: the first payment is
+ * often collected after these days.
  */
 export const COUNTED_DAYS = 14
 
@@ -104,11 +105,11 @@ export function buildPeriods(
     if (period) period.aged[delay.kind][ageStep(delay.days)] += delay.count
   }
   for (const period of periods) {
-    // Without delays nothing says when it fell away. Then all of it counts, rather than netto looking like bruto.
-    period.counted =
-      delays.length > 0
-        ? { opgezegd: period.aged.opgezegd[0], bank: period.aged.bank[0] }
-        : { opgezegd: period.cancelled, bank: period.bank }
+    // Without delays nothing says when it was cancelled. Then all of it counts, rather than netto looking like bruto.
+    period.counted = {
+      opgezegd: delays.length > 0 ? period.aged.opgezegd[0] : period.cancelled,
+      bank: period.bank,
+    }
   }
   return periods
 }
@@ -134,6 +135,10 @@ export function bonusBarEnd(netto: number, running: boolean): number {
 
 /** The afval that counts against netto. */
 export const countedAfval = (period: Pick<Period, "counted">) => period.counted.opgezegd + period.counted.bank
+
+/** Whether a cancellation came within COUNTED_DAYS of the sale; one without a known date counts, as netto does then. */
+export const isCountedCancellation = (c: { soldOn: string; cancelledOn: string | null }) =>
+  c.cancelledOn === null || daysBetween(c.soldOn, c.cancelledOn) <= COUNTED_DAYS
 
 /** Bruto minus the afval that counts. */
 export const nettoOf = (period: Pick<Period, "sold" | "counted">) => period.sold - countedAfval(period)

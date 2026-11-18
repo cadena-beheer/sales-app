@@ -7,9 +7,10 @@ import {
   isAuthRetryableFetchError,
 } from "@supabase/supabase-js"
 import type { AdminGroup, AdminUser } from "@shared/admin-types"
-import type { ExtractedFields, FormInput } from "@shared/form-schema"
+import type { FormInput, ScanResponse } from "@shared/form-schema"
 import { POSTCODE_REGEX, normalizePostcode } from "@shared/form-schema"
 import type { KpiRequest, KpiResponse } from "@shared/kpi"
+import type { SalesIssuesRequest, SalesIssuesResponse } from "@shared/sales-issues"
 import type { SalesMapRequest } from "@shared/sales-map"
 import type { SalesMapResponse } from "@shared/sales-map-view"
 import type { SalesOpportunitiesRequest, SalesOpportunitiesResponse } from "@shared/sales-opportunities"
@@ -30,6 +31,7 @@ import {
   type PostcodePlace,
   type Street,
 } from "@/features/areas/doors"
+import type { MarketingAction, NewMarketingAction } from "@/features/marketing/marketing-actions"
 import { homeDoor, type MonteurHome, type NewMonteurHome } from "@/features/monteurs/monteur-homes"
 import { IS_TEST_DEPLOYMENT, TEST_DEPLOYMENT_HEADER } from "@/lib/deployment"
 import { ApiError, AuthError, NetworkError } from "@/lib/errors"
@@ -77,17 +79,20 @@ async function recoverSession(): Promise<void> {
 
 export type PostcodeResult = { found: true; straat: string; plaats: string } | { found: false }
 
-export function lookupPostcode(postcode: string, huisnummer: string, signal?: AbortSignal) {
+export async function lookupPostcode(postcode: string, huisnummer: string, signal?: AbortSignal) {
+  if (import.meta.env.DEV && DEMO_MODE) return { found: true, straat: "Voorbeeldstraat", plaats: "Amersfoort" } as const
   return invoke<PostcodeResult>("postcode-lookup", { postcode, huisnummer }, signal)
 }
 
 export type IbanResult = { valid: boolean; iban: string; bank?: string | null; bic?: string | null }
 
-export function validateIban(iban: string, signal?: AbortSignal) {
+export async function validateIban(iban: string, signal?: AbortSignal) {
+  if (import.meta.env.DEV && DEMO_MODE) return { valid: true, iban, bank: "Demo Bank" }
   return invoke<IbanResult>("iban-validate", { iban }, signal)
 }
 
-export function submitForm(values: FormInput) {
+export async function submitForm(values: FormInput) {
+  if (import.meta.env.DEV && DEMO_MODE) return { ok: true as const, rowId: values.rowId, duplicate: false }
   return invoke<{ ok: true; rowId: string; duplicate: boolean }>("submit-form", { ...values })
 }
 
@@ -101,20 +106,40 @@ export async function listRecruiters(): Promise<Recruiter[]> {
 }
 
 /**
- * Uploads a scan photo and has it read. The photo stays in storage: its `path` goes with the form, so onboarding
- * can file it with the customer in ZMAdmin.
+ * Puts a contract photo in the scans bucket, in the user's own folder, and returns its path. Fails as retryable
+ * (NetworkError) when storage could not be reached, so a form waiting for it stays in the outbox.
  */
-export async function extractFromPhoto(
-  userId: string,
-  photo: File,
-): Promise<{ fields: ExtractedFields; mock: boolean; path: string }> {
+export async function uploadScan(userId: string, photo: Blob): Promise<string> {
+  if (import.meta.env.DEV && DEMO_MODE) return ""
   const extension = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : "jpg"
   const path = `${userId}/${crypto.randomUUID()}.${extension}`
-  const { error } = await supabase.storage.from(SCANS_BUCKET).upload(path, photo, { contentType: photo.type })
-  if (error) throw new ApiError("Uploaden van de foto is mislukt", 500)
+  const { error } = await supabase.storage
+    .from(SCANS_BUCKET)
+    .upload(path, photo, { contentType: photo.type || "image/jpeg" })
+  if (!error) return path
+  // An answer from storage has a status; without one the request never got there.
+  if (!navigator.onLine || !("status" in error)) throw new NetworkError("Geen verbinding met de server")
+  throw new ApiError("Uploaden van de foto is mislukt", 500)
+}
 
-  const result = await invoke<{ fields: ExtractedFields; mock: boolean }>("extract-form", { path })
-  return { ...result, path }
+/**
+ * Uploads the original photo and has Claude read it: the fields, whether the printed text is readable, and where the
+ * sheet is. The original stays in storage until SCAN_RETENTION_DAYS; the copy that goes with the form is uploaded
+ * separately (see enhanceScan).
+ */
+export async function readScan(userId: string, photo: Blob): Promise<ScanResponse> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { addDays } = await import("@/features/dashboard/periods")
+    const { today } = await import("@/features/sales-form/form-defaults")
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    // A week-old paper form, so the date question shows; any photo will do. `?demo&onleesbaar` turns it down,
+    // `?demo&vaag` says the handwriting is faint.
+    const fields = { datum: addDays(today(), -6), postcode: "3811AB", huisnummer: "12", klantnummer: "7000123" }
+    const problem = DEMO_PARAMS.has("onleesbaar") ? "te_donker" : null
+    return { fields, mock: true, problem, faintWriting: DEMO_PARAMS.has("vaag"), corners: null }
+  }
+  const path = await uploadScan(userId, photo)
+  return invoke<ScanResponse>("extract-form", { path })
 }
 
 // --- Dashboard ----------------------------------------------------------------------------------
@@ -123,6 +148,9 @@ export async function extractFromPhoto(
  * Dev only: open the app with `?demo` (sales manager) or `?demo=werver` to see the dashboard with made-up numbers
  * without logging in. `import.meta.env.DEV` is false in a production build, so none of this ships.
  */
+/** The address the app was opened with: navigation rewrites it, so demo switches are read once, at load. */
+const DEMO_PARAMS = new URLSearchParams(window.location.search)
+
 export const DEMO_MODE: "admin" | "werver" | null =
   import.meta.env.DEV && new URLSearchParams(window.location.search).has("demo")
     ? new URLSearchParams(window.location.search).get("demo") === "werver"
@@ -220,19 +248,19 @@ export type SubmittedSale = {
 }
 
 /**
- * One page of the sales received between `from` and `to` (ISO timestamps), oldest first, with the total for the
- * whole range. Row-level security decides whose: a recruiter gets their own, an admin everyone's.
+ * One page of the sales with contract date `date` (yyyy-MM-dd), in the order they were received, with the total for
+ * that day. By contract date, like the results from ZMAdmin, so both count a sale on the same day. Row-level
+ * security decides whose: a recruiter gets their own, an admin everyone's.
  */
 export async function listSales(
-  from: string,
-  to: string,
+  date: string,
   offset: number,
   limit: number,
 ): Promise<{ sales: SubmittedSale[]; total: number }> {
   if (import.meta.env.DEV && DEMO_MODE) {
     const { demoSales } = await import("@/features/sales-list/demo-sales")
     await new Promise((resolve) => setTimeout(resolve, 300))
-    const all = demoSales(from, DEMO_MODE === "admin")
+    const all = demoSales(date, DEMO_MODE === "admin")
     return { sales: all.slice(offset, offset + limit), total: all.length }
   }
   const { data, count, error } = await supabase
@@ -241,8 +269,7 @@ export async function listSales(
       "row_id, received, datum, wervernaam, wervernr, klantnummer, naam, straat, huisnummer, toevoeging, plaats, onboarding_status, onboarding_message:onboarding_response->>message, test",
       { count: "exact" },
     )
-    .gte("received", from)
-    .lt("received", to)
+    .eq("datum", date)
     // row_id breaks ties, so a row never shows up on two pages.
     .order("received")
     .order("row_id")
@@ -647,6 +674,63 @@ export async function deleteTickedDoors(ids: string[]): Promise<void> {
       .eq("outcome", "walked")
       .in("id", ids.slice(i, i + TICK_CHUNK))
     if (error) throw new ApiError("Terugzetten lukte niet", 500)
+  }
+}
+
+// --- Storingen and marketing on the map ------------------------------------------------------------
+
+/** Admins only: where storingen were solved, per street. */
+export async function getSalesIssues(request: SalesIssuesRequest): Promise<SalesIssuesResponse> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoSalesIssues } = await import("@shared/sales-issues-demo")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    return { demo: true, ...demoSalesIssues(request.from, request.to) }
+  }
+  return invoke<SalesIssuesResponse>("sales-issues", { ...request })
+}
+
+/** Admins only (row-level security): the marketing actions, newest first. */
+export async function listMarketingActions(): Promise<MarketingAction[]> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoMarketingActions } = await import("@/features/marketing/demo-marketing")
+    return demoMarketingActions()
+  }
+  const { data, error } = await supabase
+    .from("marketing_actions")
+    .select("id, kind, done_on, postcodes")
+    .order("done_on", { ascending: false })
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingacties konden niet worden geladen", 500)
+  }
+  return data.map((row) => ({ id: row.id, kind: row.kind, doneOn: row.done_on, postcodes: row.postcodes }))
+}
+
+/** Admins only (row-level security). */
+export async function addMarketingAction(action: NewMarketingAction): Promise<void> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoAddMarketingAction } = await import("@/features/marketing/demo-marketing")
+    return demoAddMarketingAction(action)
+  }
+  const { error } = await supabase
+    .from("marketing_actions")
+    .insert({ kind: action.kind, done_on: action.doneOn, postcodes: action.postcodes })
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingactie kon niet worden opgeslagen", 500)
+  }
+}
+
+/** Admins only (row-level security). */
+export async function deleteMarketingAction(id: string): Promise<void> {
+  if (import.meta.env.DEV && DEMO_MODE) {
+    const { demoDeleteMarketingAction } = await import("@/features/marketing/demo-marketing")
+    return demoDeleteMarketingAction(id)
+  }
+  const { error } = await supabase.from("marketing_actions").delete().eq("id", id)
+  if (error) {
+    if (!navigator.onLine) throw new NetworkError("Geen verbinding met de server")
+    throw new ApiError("De marketingactie kon niet worden verwijderd", 500)
   }
 }
 

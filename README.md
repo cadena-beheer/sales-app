@@ -121,7 +121,8 @@ code); only admins may pick another recruiter or the whole team. "Opzeggingen bi
 cancellation entered in ZMAdmin; periods ending less than four weeks before that are hatched as not complete. The
 app loads a year at a time going back ("Eerder"). Without `STATS_API_KEY` the function returns
 made-up numbers and the page says so. In development, open `http://localhost:5173/?demo` (sales manager) or
-`?demo=werver` to see the dashboard with demo data without logging in, and `?demo&beheer` for the admin page.
+`?demo=werver` to see the dashboard with demo data without logging in, `?demo&beheer` for the admin page and
+`?demo&formulier` for the form, where any photo gives a scan with a week-old date.
 
 **Bankafval.** A sale that was not cancelled but never paid. `Stats` sends it per sale day (`bankAfval`), and for one
 recruiter the customers behind it; it counts in Afval and not in Netto. Until the endpoint sends it, the page looks as
@@ -136,6 +137,11 @@ The first card shows netto, the afval percentage with its count, and bruto, larg
 When and why, and the customers, start with their first rows and a button to show all. For one recruiter the first card's bar in the month view is netto alone, up
 to the next bonus of the calendar month (50 netto, then 60, 70, up to 100), a line under it says which bonus was reached and how many are still needed, and the month chart has a line at 50. The page
 opens on the month view, because the bonus is per month.
+
+**Addresses.** Every page has its own path, so the browser's back button moves between pages (`src/lib/navigation.ts`).
+On the results, picking a recruiter is a step of its own (`/resultaten?werver=0212BB`), so back returns to the team;
+the period only changes the address (`per=week`, `periode=2026-W41` or `periode=2026-10`), so a reload or a shared
+link keeps it but back skips it. A recruiter's own results ignore `werver`.
 
 **Afgevallen klanten.** Shown by street and house number, with a button to Street View
 (`handoff/zmsuite-afval-address.md`); a row without an address shows the name and no button. Google needs a location
@@ -170,6 +176,10 @@ computed in the backend; the app only draws what it receives.
 **Monteurs.** On "Kansen" and "Toewijzen" admins also see pins where the monteurs live, and enter them with the
 pencil next to the "Monteurs" button. The location comes from PDOK when the address is entered. These are home
 addresses: row level security on `monteur_homes` lets only admins read or change them.
+
+**Storingen and marketing.** Also for admins on those views. "Storingen" shows where storingen were solved in the last
+year, per street and never per address (`sales-issues` function, `…/Sales/2026.1/Issues`; demo numbers until that
+endpoint exists). "Marketing" tints the areas of actions an admin entered with the pencil (`marketing_actions`).
 
 **Zooming in.** From zoom 11 the map shows PC5 areas, from zoom 13 the streets (PC6), each asked for per view
 (`…/Map/Pc5`, `…/Map/Pc6`, `…/Opportunities/Pc5`, `…/Opportunities/Pc6` with `bbox`). A PC5 is ranked by its

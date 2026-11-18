@@ -5,6 +5,8 @@ import type { FormInput } from "@shared/form-schema"
 import { useOnline } from "@/hooks/use-online"
 import { submitForm } from "@/lib/api"
 import { getErrorMessage, isRetryable } from "@/lib/errors"
+import { deleteScanPhoto } from "../sales-form/scan-photo-store"
+import { withUploadedPhoto } from "../sales-form/scan-upload"
 import { addToOutbox, loadOutbox, markOutboxItemRejected, removeFromOutbox } from "./outbox-store"
 
 const RETRY_INTERVAL_MS = 30_000
@@ -13,7 +15,8 @@ const outboxQueryKey = (userId: string) => ["outbox", userId] as const
 
 /**
  * Submits forms, queueing them in IndexedDB when they cannot be sent right now (offline, session expired).
- * Queued forms are sent automatically when the app starts, comes back online, and every 30 s.
+ * Queued forms are sent automatically when the app starts, comes back online, and every 30 s. A contract photo that
+ * is only on the phone is uploaded first, and removed from the phone once its form is in.
  */
 export function useOutbox(userId: string) {
   const online = useOnline()
@@ -40,7 +43,7 @@ export function useOutbox(userId: string) {
     try {
       for (const item of await loadOutbox(userId)) {
         try {
-          await submitForm(item.values)
+          await send(userId, item.values)
           await removeFromOutbox(userId, item.values.rowId)
           sent++
         } catch (error) {
@@ -76,7 +79,7 @@ export function useOutbox(userId: string) {
     async (values: FormInput): Promise<"sent" | "queued"> => {
       if (navigator.onLine) {
         try {
-          await submitForm(values)
+          await send(userId, values)
           return "sent"
         } catch (error) {
           if (!isRetryable(error)) throw error
@@ -98,4 +101,9 @@ export function useOutbox(userId: string) {
   )
 
   return { items, syncing, submit, flush, remove }
+}
+
+async function send(userId: string, values: FormInput) {
+  await submitForm(await withUploadedPhoto(userId, values))
+  await deleteScanPhoto(values.rowId)
 }

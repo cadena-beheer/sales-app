@@ -18,6 +18,7 @@ const STATS_URL = {
 }
 const MAP_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Map"
 const OPPORTUNITIES_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Opportunities"
+const ISSUES_URL = "http://test.zekerenmobiel.nl/Sales/2026.1/Issues"
 
 function environment(secret: string): "test" | "production" {
   const value = optionalEnv(secret) ?? "test"
@@ -53,4 +54,9 @@ export function mapUrl(): string {
  */
 export function opportunitiesUrl(pc4?: string): string {
   return pc4 ? `${OPPORTUNITIES_URL}/${pc4}` : OPPORTUNITIES_URL
+}
+
+/** GET endpoint with the storingen solved per street, for the map. TEST, STATS_API_KEY. */
+export function issuesUrl(): string {
+  return ISSUES_URL
 }

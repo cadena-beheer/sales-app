@@ -3,6 +3,7 @@ import {
   BETAALPERIODE_OPTIONS,
   formSchema,
   isValidIbanChecksum,
+  needsPhoto,
   parseSubmittedForm,
   normalizeIban,
   normalizePostcode,
@@ -166,5 +167,12 @@ describe("IBAN helpers", () => {
 describe("formSchema error reporting", () => {
   it("reports an invalid email together with the other errors", () => {
     expect(issuesFor({ klantnummer: "", email: "" })).toEqual(expect.arrayContaining(["klantnummer", "email"]))
+  })
+})
+
+describe("needsPhoto", () => {
+  it("always on the test deployment; in production only once a date is set", () => {
+    expect(needsPhoto("2026-11-18", true)).toBe(true)
+    expect(needsPhoto("2026-11-18", false)).toBe(false)
   })
 })

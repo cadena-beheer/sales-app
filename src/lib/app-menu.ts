@@ -18,6 +18,8 @@ export type AppMenuValue = {
   open: (view: View) => void
   openOutbox: () => void
   changePassword: () => void
+  /** "Wat is er nieuw": what changed in the app. */
+  whatsNew: () => void
   signOut: () => void
 }
 

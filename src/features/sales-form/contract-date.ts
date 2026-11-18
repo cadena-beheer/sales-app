@@ -10,6 +10,11 @@ export function isOldContractDate(datum: string, now = today()): boolean {
   return datum < addDays(now, -MAX_DAYS_OLD)
 }
 
+/** True when a date read from a paper form is not today, so the recruiter is asked which one is right. */
+export function scannedDateDiffers(datum: string | undefined, now = today()): datum is string {
+  return datum !== undefined && datum !== now
+}
+
 /** True when the contract date lies after today on the phone's calendar. */
 export function isFutureContractDate(datum: string, now = today()): boolean {
   return datum > now

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { ArrowLeftIcon, ChevronDownIcon, ClockIcon } from "lucide-react"
 import { AppMenu } from "@/components/app-menu"
 import { HEADER_BUTTON_CLASS, PAGE_WIDTH, PageHeader } from "@/components/page-header"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Spinner } from "@/components/ui/spinner"
 import type { Profile } from "@/hooks/use-profile"
 import { getErrorMessage } from "@/lib/errors"
+import type { ResultsPeriod } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import { AfvalBreakdown } from "./afval-breakdown"
 import { CancellationList } from "./cancellation-list"
@@ -20,8 +21,10 @@ import {
   BONUS_FIRST,
   buildPeriods,
   chartPeriods,
+  COUNTED_DAYS,
   formatDay,
   formatTimestamp,
+  isCountedCancellation,
   isCountedComplete,
   periodDates,
   periodKey,
@@ -33,21 +36,30 @@ import {
 import { TeamTable, VERKEERD_VOORGELICHT } from "./team-table"
 import { useKpi } from "./use-kpi"
 
-type Props = { profile: Profile | undefined; onBack: () => void }
+type Props = {
+  profile: Profile | undefined
+  /** Admins: the recruiter whose numbers show, null for the whole team. Ignored for recruiters. */
+  picked: string | null
+  onPick: (wervernr: string | null) => void
+  period: ResultsPeriod | undefined
+  onPeriod: (period: ResultsPeriod) => void
+  onBack: () => void
+}
 
 /**
  * Results from ZMAdmin for one week or month at a time: netto first, then the last few periods, then what the afval
  * consists of and who it is. A recruiter sees their own; the sales manager sees the team and can open any recruiter.
+ * Whose numbers and which period live in the address (see lib/navigation), so back and a reload keep them.
  */
-export function DashboardPage({ profile, onBack }: Props) {
+export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBack }: Props) {
   const isAdmin = profile?.isAdmin ?? false
-  // Admins: null = the whole team. Recruiters always get their own numbers (the server enforces that too).
-  const [picked, setPicked] = useState<string | null>(null)
+  // Recruiters always get their own numbers (the server enforces that too).
   const wervernr = isAdmin ? picked : (profile?.wervernr ?? null)
   const team = useKpi(null, isAdmin)
   const kpi = useKpi(wervernr, profile !== undefined)
-  const [granularity, setGranularity] = useState<Granularity>("month")
-  const [selectedKey, setSelectedKey] = useState<string>()
+  const granularity: Granularity = period?.granularity ?? "month"
+  const selectedKey = period?.key
+  const setSelectedKey = (key: string | undefined) => onPeriod({ granularity, key })
 
   const data = kpi.data
   const periods = useMemo(
@@ -64,8 +76,6 @@ export function DashboardPage({ profile, onBack }: Props) {
   const provisional = selected ? !isCountedComplete(selected, enteredUntil) : false
   // Bankafval shows once ZMAdmin sends it.
   const showBank = data?.stats.days.some((day) => day.bankAfval !== undefined) ?? false
-  // How long after the sale sales fell away shows once ZMAdmin sends it.
-  const byAge = (data?.stats.afvalDelays.length ?? 0) > 0
   const recruiters = team.data?.stats.recruiters ?? data?.stats.recruiters ?? []
   const unit = granularity === "week" ? "week" : "maand"
   // The bonus is per recruiter per calendar month. A week counts towards the month its Thursday is in.
@@ -75,32 +85,43 @@ export function DashboardPage({ profile, onBack }: Props) {
       : undefined
   const customers = selected
     ? {
-        items: data?.stats.cancellations.filter((c) => c.soldOn >= selected.start && c.soldOn <= selected.end) ?? [],
+        items:
+          data?.stats.cancellations.filter(
+            (c) => c.soldOn >= selected.start && c.soldOn <= selected.end && isCountedCancellation(c),
+          ) ?? [],
         bank: data?.stats.bankAfval.filter((b) => b.soldOn >= selected.start && b.soldOn <= selected.end) ?? [],
       }
     : { items: [], bank: [] }
   // "week 41" or "juni 2025". Only the bar at the top names the period: every card below is about it.
   const periodName = selected ? periodTitle(selected, granularity) : ""
 
-  // A recruiter's reasons come from their own cancellations, which carry the sale day. The team only has the totals
-  // per reason; per period once the endpoint sends their sale day (see SalesStats.reasons).
+  // A recruiter's reasons come from their own cancellations, which carry both dates, so only those that count are in
+  // them. The team only has the reasons per sale day, also of later cancellations, until the endpoint says how long
+  // after the sale (see SalesStats.reasons); and only the totals for everything loaded until it sends the sale day.
   const reasonsPerPeriod = wervernr !== null || (data?.stats.reasons.every((r) => r.date) ?? true)
   const reasons =
     !data || !selected
       ? []
       : wervernr !== null
         ? reasonsIn(
-            data.stats.cancellations.map((c) => ({ date: c.soldOn, reason: c.reason, count: 1 })),
+            data.stats.cancellations
+              .filter(isCountedCancellation)
+              .map((c) => ({ date: c.soldOn, reason: c.reason, count: 1 })),
             selected,
           )
         : reasonsIn(data.stats.reasons, reasonsPerPeriod ? selected : null)
+  const reasonsNote =
+    wervernr !== null || !data
+      ? null
+      : reasonsPerPeriod
+        ? `Alle opzeggingen van deze ${unit}, ook na ${COUNTED_DAYS} dagen.`
+        : `Alle opzeggingen van verkopen sinds ${formatDay(data.from)} ${data.from.slice(0, 4)}.`
 
-  const voorgelicht = reasonsPerPeriod ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
+  const voorgelicht = reasonsNote === null ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
 
   function changeGranularity(next: Granularity) {
     // Stay on the same moment: the week or month that contains the selected period's first day.
-    if (selected) setSelectedKey(periodKey(selected.start, next))
-    setGranularity(next)
+    onPeriod({ granularity: next, key: selected ? periodKey(selected.start, next) : undefined })
   }
 
   async function previous() {
@@ -127,11 +148,17 @@ export function DashboardPage({ profile, onBack }: Props) {
                 aria-label="Wiens cijfers"
                 className="max-w-[60vw] min-w-0 appearance-none truncate rounded-md bg-white/15 py-1.5 pr-8 pl-3 text-lg font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 value={picked ?? ""}
-                onChange={(event) => setPicked(event.target.value || null)}
+                onChange={(event) => onPick(event.target.value || null)}
               >
                 <option className="text-foreground" value="">
                   Hele team
                 </option>
+                {/* Opened from an address: the number, until the team's names have loaded. */}
+                {picked && !recruiters.some((r) => r.number === picked) && (
+                  <option className="text-foreground" value={picked}>
+                    {picked}
+                  </option>
+                )}
                 {recruiters.map((r) => (
                   <option className="text-foreground" key={r.number} value={r.number}>
                     {r.name} ({r.number})
@@ -239,20 +266,14 @@ export function DashboardPage({ profile, onBack }: Props) {
             <div className="flex min-w-0 flex-col gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Alle afval</CardTitle>
+                  <CardTitle>Afval</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <AfvalBreakdown
                     period={selected}
                     showBank={showBank}
-                    byAge={byAge}
-                    enteredUntil={enteredUntil}
                     reasons={reasons}
-                    reasonsNote={
-                      reasonsPerPeriod
-                        ? null
-                        : `Verkopen sinds ${formatDay(data.from)} ${data.from.slice(0, 4)}; per ${unit} volgt nog.`
-                    }
+                    reasonsNote={reasonsNote}
                     voorgelicht={voorgelicht}
                     voorgelichtReason={VERKEERD_VOORGELICHT}
                   />
@@ -266,15 +287,7 @@ export function DashboardPage({ profile, onBack }: Props) {
                     <CardDescription>Tik op een werver voor diens afgevallen klanten.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <TeamTable
-                      stats={data.stats}
-                      period={selected}
-                      showBank={showBank}
-                      onPick={(number) => {
-                        setPicked(number)
-                        window.scrollTo({ top: 0 })
-                      }}
-                    />
+                    <TeamTable stats={data.stats} period={selected} showBank={showBank} onPick={onPick} />
                   </CardContent>
                 </Card>
               ) : (

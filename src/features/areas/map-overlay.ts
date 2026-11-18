@@ -36,6 +36,9 @@ export const PICKED_COLOR = "#15803d"
 /** A light green over the picked areas, so the selection reads as one block; the shade still shows through. */
 const PICKED_FILL = "#22c55e"
 
+/** Teal: marketing actions, clear of the blue shades and of the red and green of areas given out. */
+const MARKETING_COLOR = "#0d9488"
+
 const POSTCODE: ExpressionSpecification = ["get", "postcode"]
 
 /** Features covered by any of `codes`: their postcode starts with one. */
@@ -59,6 +62,14 @@ const oneOf = (codes: string[]): FilterSpecification => ["in", POSTCODE, ["liter
 export function overlayLayers(level: string, minzoom: number, maxzoom: number): LayerSpecification[] {
   const base = { source: level, "source-layer": level, minzoom, filter: oneOf([]) }
   return [
+    {
+      ...base,
+      id: `${level}-marketing`,
+      type: "fill",
+      maxzoom,
+      paint: { "fill-color": MARKETING_COLOR, "fill-opacity": 0.3 },
+    },
+    { ...base, id: `${level}-marketing-line`, type: "line", paint: { "line-color": MARKETING_COLOR, "line-width": 2 } },
     { ...base, id: `${level}-taken`, type: "fill", maxzoom, paint: { "fill-pattern": "hatch" } },
     {
       ...base,
@@ -91,6 +102,14 @@ export function applyOverlay(map: MapLibreMap, levels: readonly PostcodeLevel[],
     const picked = oneOf(overlay.picked.filter((c) => c.length === length))
     map.setFilter(`${level}-picked-fill`, picked)
     map.setFilter(`${level}-picked`, picked)
+  }
+}
+
+/** Tints what the marketing actions cover at every level, and outlines each code on its own level only. */
+export function applyMarketing(map: MapLibreMap, levels: readonly PostcodeLevel[], codes: string[]): void {
+  for (const level of levels) {
+    map.setFilter(`${level}-marketing`, coveredBy(codes))
+    map.setFilter(`${level}-marketing-line`, oneOf(codes.filter((c) => c.length === CODE_LENGTH[level])))
   }
 }
 
