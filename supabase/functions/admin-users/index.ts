@@ -58,6 +58,9 @@ serve(async (req) => {
     case "invite": {
       // No email: the account is active at once with a temporary password, which the admin passes on.
       // This response is the only place it is ever available; it is not stored anywhere readable.
+      // Checked up front: a taken wervernr makes the profile trigger fail, which Supabase Auth only reports as a
+      // vague "Database error creating new user".
+      await assertWervernrFree(body.wervernr)
       const password = generateTemporaryPassword()
       const { data, error } = await admin.auth.admin.createUser({
         email: body.email,
@@ -65,8 +68,16 @@ serve(async (req) => {
         email_confirm: true,
         user_metadata: { wervernaam: body.wervernaam, wervernr: body.wervernr },
       })
-      if (error?.code === "email_exists") throw new HttpError(409, "Er bestaat al een gebruiker met dit e-mailadres")
-      if (error) throw new HttpError(400, error.message)
+      if (error?.code === "email_exists" || error?.code === "user_already_exists")
+        throw new HttpError(409, `Er bestaat al een gebruiker met e-mailadres ${body.email}`)
+      if (error?.code === "weak_password")
+        throw new HttpError(400, "Het gegenereerde wachtwoord werd geweigerd, probeer het opnieuw")
+      if (error) {
+        console.error("createUser", error)
+        // Most likely someone took the wervernr between the check above and now.
+        await assertWervernrFree(body.wervernr)
+        throw new HttpError(500, `De gebruiker kon niet worden aangemaakt (${error.message})`)
+      }
       // The on_auth_user_created trigger created the profile from the metadata; only the flags are left.
       if (body.isAdmin || body.scanContactFields || body.groupId) await updateProfile(caller.id, data.user.id, body)
       return json({ ok: true, password })
@@ -75,6 +86,7 @@ serve(async (req) => {
     case "update": {
       if (body.id === caller.id && !body.isAdmin)
         throw new HttpError(400, "Je kunt je eigen beheerrechten niet intrekken")
+      await assertWervernrFree(body.wervernr, body.id)
       await updateProfile(caller.id, body.id, body)
       return json({ ok: true })
     }
@@ -198,7 +210,25 @@ async function updateProfile(
     p_set_group: profile.groupId !== undefined,
     p_group_id: profile.groupId ?? null,
   })
-  if (error?.code === "23505") throw new HttpError(409, "Dit wervernummer is al in gebruik")
+  if (error?.code === "23505") {
+    await assertWervernrFree(profile.wervernr, profileId)
+    throw new HttpError(409, `Wervernummer ${profile.wervernr} is al in gebruik`)
+  }
   if (error?.code === "23503") throw new HttpError(400, "Deze groep bestaat niet meer")
   if (error) throw error
+}
+
+/**
+ * Throws a 409 naming the recruiter who already has this wervernr (other than `exceptId`), so the admin can see
+ * straight away who to look at.
+ */
+async function assertWervernrFree(wervernr: string, exceptId?: string) {
+  let query = admin.from("profiles").select("id, wervernaam").eq("wervernr", wervernr).limit(1)
+  if (exceptId) query = query.neq("id", exceptId)
+  const { data, error } = await query.maybeSingle()
+  if (error) throw error
+  if (!data) return
+  const { data: owner } = await admin.auth.admin.getUserById(data.id)
+  const who = [data.wervernaam, owner?.user?.email && `(${owner.user.email})`].filter(Boolean).join(" ")
+  throw new HttpError(409, `Wervernummer ${wervernr} is al in gebruik door ${who || "een andere gebruiker"}`)
 }

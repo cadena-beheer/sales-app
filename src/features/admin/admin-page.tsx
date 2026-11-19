@@ -106,6 +106,7 @@ export function AdminPage({ currentUserId, onBack }: Props) {
         <UserDialog
           key={dialogUser?.id ?? "new"}
           user={dialogUser}
+          users={users ?? []}
           groups={groups}
           isSelf={dialogUser?.id === currentUserId}
           onClose={() => setDialogUser(undefined)}
