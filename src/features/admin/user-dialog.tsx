@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
@@ -23,6 +23,8 @@ import { useAdminAction } from "./use-admin-users"
 type Props = {
   /** The recruiter to edit, or null to add a new one. */
   user: AdminUser | null
+  /** Everyone already there, to warn about a taken e-mail address or wervernummer before saving. */
+  users: AdminUser[]
   groups: AdminGroup[]
   isSelf: boolean
   onClose: () => void
@@ -32,7 +34,7 @@ type Props = {
  * Add or edit a recruiter. Mounted only while open (and keyed by user), so its state starts fresh
  * every time it opens.
  */
-export function UserDialog({ user, groups, isSelf, onClose }: Props) {
+export function UserDialog({ user, users, groups, isSelf, onClose }: Props) {
   const [email, setEmail] = useState("")
   const [profile, setProfile] = useState<AdminProfileInput>({
     wervernaam: user?.wervernaam ?? "",
@@ -42,6 +44,9 @@ export function UserDialog({ user, groups, isSelf, onClose }: Props) {
     groupId: user?.groupId ?? null,
   })
   const [created, setCreated] = useState<{ email: string; password: string } | null>(null)
+  const others = users.filter((other) => other.id !== user?.id)
+  const wervernrOwner = others.find((other) => other.wervernr === profile.wervernr.trim())
+  const emailOwner = user ? undefined : others.find((other) => other.email.toLowerCase() === email.trim().toLowerCase())
   const save = useAdminAction(
     async () => {
       if (user) return adminApi.update(user.id, profile)
@@ -53,6 +58,7 @@ export function UserDialog({ user, groups, isSelf, onClose }: Props) {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (wervernrOwner || emailOwner) return
     save.mutate(undefined, {
       onSuccess: () => {
         if (!user) return
@@ -93,7 +99,9 @@ export function UserDialog({ user, groups, isSelf, onClose }: Props) {
                   autoComplete="off"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  aria-invalid={!!emailOwner}
                 />
+                {emailOwner && <FieldError>Dit e-mailadres is al in gebruik door {describe(emailOwner)}</FieldError>}
               </Field>
             )}
             <Field>
@@ -112,7 +120,11 @@ export function UserDialog({ user, groups, isSelf, onClose }: Props) {
                 required
                 value={profile.wervernr}
                 onChange={(event) => setProfile({ ...profile, wervernr: event.target.value })}
+                aria-invalid={!!wervernrOwner}
               />
+              {wervernrOwner && (
+                <FieldError>Dit wervernummer is al in gebruik door {describe(wervernrOwner)}</FieldError>
+              )}
             </Field>
             <Field>
               <FieldLabel htmlFor="group">Groep</FieldLabel>
@@ -160,7 +172,7 @@ export function UserDialog({ user, groups, isSelf, onClose }: Props) {
             <Button type="button" variant="outline" onClick={onClose}>
               Annuleren
             </Button>
-            <Button type="submit" disabled={save.isPending}>
+            <Button type="submit" disabled={save.isPending || !!wervernrOwner || !!emailOwner}>
               {save.isPending && <Spinner />}
               {user ? "Opslaan" : "Toevoegen"}
             </Button>
@@ -231,4 +243,10 @@ function CreatedDialog({ email, password, onClose }: { email: string; password: 
       </DialogContent>
     </Dialog>
   )
+}
+
+/** "Name (email)", or whichever of the two is known. */
+function describe(user: AdminUser): string {
+  if (user.wervernaam && user.email) return `${user.wervernaam} (${user.email})`
+  return user.wervernaam || user.email || "een andere gebruiker"
 }
