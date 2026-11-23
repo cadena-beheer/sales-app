@@ -1,3 +1,5 @@
+import { releaseCanvas } from "./scan-image"
+
 /**
  * A quick look at a photo on the phone, before it is uploaded: only photos on which nothing can be read are caught
  * here (almost black, washed out, or one flat grey). Whether the printed text of the form can be read is up to
@@ -57,10 +59,15 @@ export async function photoProblem(photo: Blob): Promise<PhotoProblem | null> {
   const bitmap = await createImageBitmap(photo)
   const scale = Math.min(1, SAMPLE_EDGE / Math.max(bitmap.width, bitmap.height))
   const canvas = document.createElement("canvas")
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-  const context = canvas.getContext("2d", { willReadFrequently: true })!
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  bitmap.close()
-  return luminanceProblem(measureLuminance(context.getImageData(0, 0, canvas.width, canvas.height).data))
+  try {
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const context = canvas.getContext("2d", { willReadFrequently: true })
+    if (!context) throw new Error(`No 2d canvas for ${canvas.width}x${canvas.height}`)
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    return luminanceProblem(measureLuminance(context.getImageData(0, 0, canvas.width, canvas.height).data))
+  } finally {
+    bitmap.close()
+    releaseCanvas(canvas)
+  }
 }
