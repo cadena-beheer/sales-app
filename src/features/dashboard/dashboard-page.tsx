@@ -28,6 +28,7 @@ import {
   isCountedComplete,
   periodDates,
   periodKey,
+  periodStart,
   periodTitle,
   reasonsIn,
   today,
@@ -56,7 +57,7 @@ export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBac
   // Recruiters always get their own numbers (the server enforces that too).
   const wervernr = isAdmin ? picked : (profile?.wervernr ?? null)
   const team = useKpi(null, isAdmin)
-  const kpi = useKpi(wervernr, profile !== undefined)
+  const kpi = useKpi(wervernr, profile !== undefined, !isAdmin)
   const granularity: Granularity = period?.granularity ?? "month"
   const selectedKey = period?.key
   const setSelectedKey = (key: string | undefined) => onPeriod({ granularity, key })
@@ -120,8 +121,11 @@ export function DashboardPage({ profile, picked, onPick, period, onPeriod, onBac
   const voorgelicht = reasonsNote === null ? (reasons.find((r) => r.reason === VERKEERD_VOORGELICHT)?.count ?? 0) : null
 
   function changeGranularity(next: Granularity) {
-    // Stay on the same moment: the week or month that contains the selected period's first day.
-    onPeriod({ granularity: next, key: selected ? periodKey(selected.start, next) : undefined })
+    // Stay on the same moment: the week or month that contains the selected period's first day, or, for the oldest
+    // month when that week started before the loaded range (only whole weeks show), the first week after it.
+    if (!selected || !data) return onPeriod({ granularity: next, key: undefined })
+    const start = periodStart(selected.start, next) < data.from ? addDays(selected.start, 7) : selected.start
+    onPeriod({ granularity: next, key: periodKey(start, next) })
   }
 
   async function previous() {

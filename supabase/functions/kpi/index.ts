@@ -3,7 +3,7 @@ import { statsUrl } from "../_shared/contracts-api.ts"
 import { optionalEnv } from "../_shared/env.ts"
 import { HttpError, json, serve } from "../_shared/http.ts"
 import { isTestRequest } from "../_shared/test-request.ts"
-import { kpiRequestSchema, salesStatsSchema, type KpiResponse, type SalesStats } from "../_shared/kpi.ts"
+import { kpiRequestSchema, recruiterFrom, salesStatsSchema, type KpiResponse, type SalesStats } from "../_shared/kpi.ts"
 import { demoSalesStats } from "../_shared/kpi-demo.ts"
 
 // Sales and cancellations for the dashboard, from ZMAdmin via the Contracts API (GET .../Sales/2026.1/Stats).
@@ -26,14 +26,39 @@ serve(async (req) => {
   if (error || !profile) throw new HttpError(403, "Geen profiel gevonden")
 
   const wervernr = profile.is_admin ? parsed.data.wervernr || null : profile.wervernr
+  // A recruiter sees only the last few months (RECRUITER_MONTHS); anything asked for before that is cut off.
+  const since = profile.is_admin ? from : maxDate(from, recruiterFrom(dutchToday()))
 
   const key = optionalEnv("STATS_API_KEY")
-  const stats = key
-    ? await fetchStats(statsUrl(isTestRequest(req)), key, from, to, wervernr)
-    : demoSalesStats(from, to, wervernr)
+  const stats =
+    since > to
+      ? emptyStats()
+      : key
+        ? await fetchStats(statsUrl(isTestRequest(req)), key, since, to, wervernr)
+        : demoSalesStats(since, to, wervernr)
   const response: KpiResponse = { demo: !key, wervernr, stats }
   return json(response)
 })
+
+/** Today in the Netherlands, yyyy-MM-dd. */
+function dutchToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date())
+}
+
+const maxDate = (a: string, b: string) => (a > b ? a : b)
+
+function emptyStats(): SalesStats {
+  return {
+    cancellationsEnteredUntil: null,
+    salesEnteredUntil: null,
+    days: [],
+    recruiters: [],
+    cancellations: [],
+    reasons: [],
+    bankAfval: [],
+    afvalDelays: [],
+  }
+}
 
 async function fetchStats(
   endpoint: string,

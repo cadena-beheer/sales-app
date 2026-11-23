@@ -15,6 +15,15 @@ export const kpiRequestSchema = z.object({
 
 export type KpiRequest = z.input<typeof kpiRequestSchema>
 
+/** How many months a recruiter can see: the current one and the two before it. Admins see everything. */
+export const RECRUITER_MONTHS = 3
+
+/** The first sale day a recruiter may see on `today` (yyyy-MM-dd): the 1st of the month RECRUITER_MONTHS - 1 back. */
+export function recruiterFrom(today: string): string {
+  const [year, month] = today.split("-").map(Number)
+  return new Date(Date.UTC(year, month - 1 - (RECRUITER_MONTHS - 1), 1)).toISOString().slice(0, 10)
+}
+
 /**
  * The Contracts API's answer. Dates without a time are yyyy-MM-dd; timestamps are ZMAdmin's local (Dutch) time
  * without a zone, e.g. "2026-10-02T09:26:35.37".
