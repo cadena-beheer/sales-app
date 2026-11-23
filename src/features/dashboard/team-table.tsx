@@ -1,6 +1,6 @@
 import { ChevronRightIcon } from "lucide-react"
 import type { SalesStats } from "@shared/kpi"
-import { ageStep, formatRate, type Period } from "./periods"
+import { COUNTED_DAYS, formatRate, isCountedDelay, type Period } from "./periods"
 
 type Props = {
   stats: SalesStats
@@ -30,15 +30,15 @@ export function TeamTable({ stats, period, showBank, onPick }: Props) {
   const showVoorgelicht = stats.reasons.some((reason) => reason.recruiter)
   const countBy = (rows: { recruiter?: string; count: number }[], recruiter: string) =>
     rows.reduce((sum, row) => (row.recruiter === recruiter ? sum + row.count : sum), 0)
-  const within14 = stats.afvalDelays.filter(
-    (delay) => delay.kind === "opgezegd" && inPeriod(delay.date) && ageStep(delay.days) === 0,
+  const counted = stats.afvalDelays.filter(
+    (delay) => delay.kind === "opgezegd" && inPeriod(delay.date) && isCountedDelay(delay.days),
   )
   const voorgelicht = stats.reasons.filter((r) => inPeriod(r.date) && r.reason === VERKEERD_VOORGELICHT)
 
-  // As netto: cancellations within 14 days (all of them without that per recruiter) and all bankafval.
+  // As netto: cancellations within COUNTED_DAYS (all of them without that per recruiter) and all bankafval.
   const rows = [...totals]
     .map(([number, total]) => {
-      const opgezegd = showChurn ? countBy(within14, number) : total.cancelled
+      const opgezegd = showChurn ? countBy(counted, number) : total.cancelled
       return {
         number,
         name: names.get(number) ?? number,
@@ -62,7 +62,7 @@ export function TeamTable({ stats, period, showBank, onPick }: Props) {
           <th className="pb-2 pl-2 text-right font-normal">Bruto</th>
           <th
             className="hidden pb-2 pl-2 text-right font-normal sm:table-cell"
-            title={showChurn ? "Opgezegd binnen 14 dagen" : undefined}
+            title={showChurn ? `Opgezegd binnen ${COUNTED_DAYS} dagen` : undefined}
           >
             Opgezegd
           </th>

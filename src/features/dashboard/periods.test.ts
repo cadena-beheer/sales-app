@@ -129,9 +129,9 @@ describe("afval by age", () => {
 })
 
 describe("isCountedCancellation", () => {
-  it("is a cancellation within 14 days, or one without a date", () => {
-    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-09-15T10:00:00" })).toBe(true)
-    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-09-16T10:00:00" })).toBe(false)
+  it("is a cancellation within 30 days, or one without a date", () => {
+    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-10-01T10:00:00" })).toBe(true)
+    expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: "2026-10-02T10:00:00" })).toBe(false)
     expect(isCountedCancellation({ soldOn: "2026-09-01", cancelledOn: null })).toBe(true)
   })
 })
@@ -298,16 +298,17 @@ describe("bonusBarEnd", () => {
 describe("netto", () => {
   const delay = (days: number, kind: "opgezegd" | "bank" = "opgezegd") => ({ date: "2026-09-01", kind, days, count: 1 })
 
-  it("counts only afval within 14 days", () => {
-    const [week] = buildPeriods([{ ...day("2026-09-01", 10, 3), bankAfval: 1 }], "month", "2026-09-01", "2026-09-30", [
+  it("counts only cancellations within 30 days", () => {
+    const [week] = buildPeriods([{ ...day("2026-09-01", 10, 4), bankAfval: 1 }], "month", "2026-09-01", "2026-09-30", [
       delay(14),
-      delay(15),
+      delay(30),
+      delay(31),
       delay(400),
       delay(10, "bank"),
     ])
-    expect(week.counted).toEqual({ opgezegd: 1, bank: 1 })
-    expect(countedAfval(week)).toBe(2)
-    expect(nettoOf(week)).toBe(8)
+    expect(week.counted).toEqual({ opgezegd: 2, bank: 1 })
+    expect(countedAfval(week)).toBe(3)
+    expect(nettoOf(week)).toBe(7)
   })
 
   it("counts bankafval whenever it came", () => {
