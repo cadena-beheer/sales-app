@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
-import type { SalesStats } from "@shared/kpi"
+import { recruiterFrom, type SalesStats } from "@shared/kpi"
 import { getKpi } from "@/lib/api"
 import { kpiWindow, today } from "./periods"
 
@@ -17,14 +17,15 @@ export type KpiData = {
 
 /**
  * Sales statistics for one recruiter (or, for admins, the team when `wervernr` is null), loaded a year at a time
- * going back. The pages are merged into one set of statistics.
+ * going back. The pages are merged into one set of statistics. `recent`: only the months a recruiter may see
+ * (RECRUITER_MONTHS), in one page; the server cuts off anything older too.
  */
-export function useKpi(wervernr: string | null, enabled = true) {
+export function useKpi(wervernr: string | null, enabled = true, recent = false) {
   const until = today()
   const query = useInfiniteQuery({
-    queryKey: ["kpi", wervernr ?? "team", until],
+    queryKey: ["kpi", wervernr ?? "team", until, recent],
     queryFn: async ({ pageParam }) => {
-      const window = kpiWindow(pageParam, until)
+      const window = recent ? { from: recruiterFrom(until), to: until } : kpiWindow(pageParam, until)
       return { ...window, response: await getKpi({ ...window, wervernr }) }
     },
     enabled,
@@ -32,7 +33,7 @@ export function useKpi(wervernr: string | null, enabled = true) {
     placeholderData: keepPreviousData,
     initialPageParam: 0,
     getNextPageParam: (last, pages, lastPageParam) =>
-      pages.length < MAX_PAGES && last.response.stats.days.length > 0 ? lastPageParam + 1 : undefined,
+      !recent && pages.length < MAX_PAGES && last.response.stats.days.length > 0 ? lastPageParam + 1 : undefined,
   })
 
   const data = useMemo(() => (query.data ? merge(query.data.pages) : undefined), [query.data])
