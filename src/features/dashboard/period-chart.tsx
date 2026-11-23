@@ -1,5 +1,14 @@
 import { cn } from "@/lib/utils"
-import { countedAfval, formatRate, longLabel, nettoOf, shortLabel, type Granularity, type Period } from "./periods"
+import {
+  COUNTED_DAYS,
+  countedAfval,
+  formatRate,
+  longLabel,
+  nettoOf,
+  shortLabel,
+  type Granularity,
+  type Period,
+} from "./periods"
 
 type Props = {
   periods: Period[]
@@ -55,7 +64,7 @@ export function PeriodChart({ periods, granularity, selectedKey, onSelect, isPro
             const provisional = isProvisional(period)
             const rate = formatRate(period.sold > 0 ? countedAfval(period) / period.sold : null)
             const bank = showBank ? `, ${period.counted.bank} bankafval` : ""
-            const summary = `${longLabel(period, granularity)}: ${netto} netto, ${period.counted.opgezegd} binnen 14 dagen opgezegd${bank}, ${rate} afval`
+            const summary = `${longLabel(period, granularity)}: ${netto} netto, ${period.counted.opgezegd} binnen ${COUNTED_DAYS} dagen opgezegd${bank}, ${rate} afval`
             return (
               <button
                 key={period.key}
@@ -111,7 +120,7 @@ export function PeriodChart({ periods, granularity, selectedKey, onSelect, isPro
 
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <Legend swatch="bg-netto">Netto</Legend>
-        <Legend swatch="bg-opgezegd">Opgezegd ≤14d</Legend>
+        <Legend swatch="bg-opgezegd">{`Opgezegd ≤${COUNTED_DAYS}d`}</Legend>
         {showBank && <Legend swatch="bg-bankafval">Bankafval</Legend>}
         <li>% = afval van bruto</li>
         {periods.some(isProvisional) && (

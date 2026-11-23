@@ -20,11 +20,14 @@ export type Period = {
 }
 
 /**
- * Only cancellations within this many days after the sale count against netto and the bonus, and only those are shown:
- * later ones are about the customer, not the sale. Bankafval always counts, whenever it comes: the first payment is
- * often collected after these days.
+ * Only cancellations within this many days (a month) after the sale count against netto and the bonus, and only those
+ * are shown: later ones are about the customer, not the sale. Bankafval always counts, whenever it comes: the first
+ * payment is often collected after these days.
  */
-export const COUNTED_DAYS = 14
+export const COUNTED_DAYS = 30
+
+/** Whether something that fell away this many days after the sale is within COUNTED_DAYS. */
+export const isCountedDelay = (days: number) => days <= COUNTED_DAYS
 
 /**
  * How long after the sale sales fall away: first days are about the sale itself, after a year about the renewal.
@@ -102,14 +105,14 @@ export function buildPeriods(
   }
   for (const delay of delays) {
     const period = byKey.get(periodKey(delay.date, granularity))
-    if (period) period.aged[delay.kind][ageStep(delay.days)] += delay.count
+    if (!period) continue
+    period.aged[delay.kind][ageStep(delay.days)] += delay.count
+    if (delay.kind === "opgezegd" && isCountedDelay(delay.days)) period.counted.opgezegd += delay.count
   }
   for (const period of periods) {
     // Without delays nothing says when it was cancelled. Then all of it counts, rather than netto looking like bruto.
-    period.counted = {
-      opgezegd: delays.length > 0 ? period.aged.opgezegd[0] : period.cancelled,
-      bank: period.bank,
-    }
+    if (delays.length === 0) period.counted.opgezegd = period.cancelled
+    period.counted.bank = period.bank
   }
   return periods
 }
@@ -138,7 +141,7 @@ export const countedAfval = (period: Pick<Period, "counted">) => period.counted.
 
 /** Whether a cancellation came within COUNTED_DAYS of the sale; one without a known date counts, as netto does then. */
 export const isCountedCancellation = (c: { soldOn: string; cancelledOn: string | null }) =>
-  c.cancelledOn === null || daysBetween(c.soldOn, c.cancelledOn) <= COUNTED_DAYS
+  c.cancelledOn === null || isCountedDelay(daysBetween(c.soldOn, c.cancelledOn))
 
 /** Bruto minus the afval that counts. */
 export const nettoOf = (period: Pick<Period, "sold" | "counted">) => period.sold - countedAfval(period)
