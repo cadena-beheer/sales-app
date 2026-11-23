@@ -1,4 +1,5 @@
 import type { ScanCorners, ScanPoint } from "@shared/form-schema"
+import { canvasToJpeg, releaseCanvas } from "./scan-image"
 
 /**
  * The scanner-style copy of a contract photo, the one that goes to ZMAdmin: the sheet cut out and straightened by the
@@ -9,26 +10,30 @@ import type { ScanCorners, ScanPoint } from "@shared/form-schema"
  */
 export async function enhanceScan(photo: Blob, corners: ScanCorners | null): Promise<File> {
   const bitmap = await createImageBitmap(photo)
-  const source = toImageData(bitmap, bitmap.width, bitmap.height)
-  bitmap.close()
+  let source: ImageData
+  try {
+    source = toImageData(bitmap, bitmap.width, bitmap.height)
+  } finally {
+    bitmap.close()
+  }
 
   const quad = corners && usableCorners(corners, source.width, source.height)
   const straight = quad ? warp(source, quad) : source
   whiten(straight)
 
   const canvas = document.createElement("canvas")
-  canvas.width = straight.width
-  canvas.height = straight.height
-  canvas.getContext("2d")!.putImageData(straight, 0, 0)
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      (result) => (result ? resolve(result) : reject(new Error("Foto verwerken mislukt"))),
-      "image/jpeg",
-      // Thin, light lines suffer most from compression.
-      0.9,
-    ),
-  )
-  return new File([blob], "scan.jpg", { type: "image/jpeg" })
+  try {
+    canvas.width = straight.width
+    canvas.height = straight.height
+    const context = canvas.getContext("2d")
+    if (!context) throw new Error(`No 2d canvas for ${canvas.width}x${canvas.height}`)
+    context.putImageData(straight, 0, 0)
+    // Thin, light lines suffer most from compression.
+    const blob = await canvasToJpeg(canvas, 0.9)
+    return new File([blob], "scan.jpg", { type: "image/jpeg" })
+  } finally {
+    releaseCanvas(canvas)
+  }
 }
 
 type Quad = [ScanPoint, ScanPoint, ScanPoint, ScanPoint]
@@ -215,9 +220,14 @@ function whiten(image: ImageData) {
 
 function toImageData(bitmap: ImageBitmap, width: number, height: number): ImageData {
   const canvas = document.createElement("canvas")
-  canvas.width = width
-  canvas.height = height
-  const context = canvas.getContext("2d", { willReadFrequently: true })!
-  context.drawImage(bitmap, 0, 0, width, height)
-  return context.getImageData(0, 0, width, height)
+  try {
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext("2d", { willReadFrequently: true })
+    if (!context) throw new Error(`No 2d canvas for ${width}x${height}`)
+    context.drawImage(bitmap, 0, 0, width, height)
+    return context.getImageData(0, 0, width, height)
+  } finally {
+    releaseCanvas(canvas)
+  }
 }

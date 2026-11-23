@@ -9,13 +9,14 @@ import {
   type ScanResponse,
 } from "@shared/form-schema"
 import { readScan, uploadScan } from "@/lib/api"
-import { getErrorMessage, isRetryable } from "@/lib/errors"
+import { ApiError, AuthError, getErrorMessage, isRetryable, NetworkError } from "@/lib/errors"
+import { describeError, reportClientError } from "@/lib/report-error"
 import { scannedDateDiffers } from "./contract-date"
 import type { SalesFormApi } from "./form-types"
 import { normalizeNaam, type NaamCorrection } from "./naam"
 import { photoProblem, type PhotoProblem } from "./photo-quality"
 import { enhanceScan } from "./scan-enhance"
-import { prepareScanImage } from "./scan-image"
+import { prepareScanImage, prepareScanImageViaElement, unshrunkPhoto } from "./scan-image"
 
 // Fill animation: text fields are "typed" character by character, pickers are set at once.
 const TYPE_CHAR_MS = 22
@@ -66,11 +67,45 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     setRejection(null)
     setNaamCorrection(null)
     await run(async () => {
-      const photo = await prepareScanImage(file)
-      const problem = await photoProblem(photo)
+      const photo = await shrink(file)
+      const problem = await photoProblem(photo).catch((error: unknown) => {
+        // Only a quick check; Claude judges the photo anyway.
+        reportClientError("scan.check", error, describePhoto(photo))
+        return null
+      })
       if (problem) return reject(problem, () => read(photo))
       await read(photo)
     })
+  }
+
+  /**
+   * The camera photo made small enough for Claude. When the phone cannot do that one way, it tries another, and
+   * last sends the photo as taken if it is small enough; every failure is logged with the real cause.
+   */
+  async function shrink(file: File): Promise<File> {
+    try {
+      return await prepareScanImage(file)
+    } catch (error) {
+      reportClientError("scan.prepare", error, describePhoto(file))
+    }
+    try {
+      return await prepareScanImageViaElement(file)
+    } catch (error) {
+      reportClientError("scan.prepare-element", error, describePhoto(file))
+      const asTaken = unshrunkPhoto(file)
+      if (asTaken) return asTaken
+      throw error
+    }
+  }
+
+  /** The scanner-style copy, or the photo as it is when the phone cannot make one: a photo must never block a form. */
+  async function cleanCopy(photo: File, corners: ScanResponse["corners"]): Promise<File> {
+    try {
+      return await enhanceScan(photo, corners)
+    } catch (error) {
+      reportClientError("scan.enhance", error, { ...describePhoto(photo), corners: corners !== null })
+      return photo
+    }
   }
 
   /** The turned-down photo after all, from where it was stopped. */
@@ -91,7 +126,10 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     try {
       await step()
     } catch (error) {
-      toast.error(getErrorMessage(error, "Foto verwerken mislukt"))
+      const known = error instanceof ApiError || error instanceof NetworkError || error instanceof AuthError
+      if (!known) reportClientError("scan", error)
+      // The cause in the message too, so a screenshot from a recruiter says what went wrong.
+      toast.error(known ? getErrorMessage(error) : `Foto verwerken mislukt (${describeError(error).name})`)
     } finally {
       setPhase(null)
     }
@@ -120,7 +158,7 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
   async function keepUnread(photo: File, error: unknown) {
     latest.current++
     setFaintWritingFor(null)
-    await savePhoto(await enhanceScan(photo, null))
+    await savePhoto(await cleanCopy(photo, null))
     form.setValue("scanPath", "", { shouldDirty: true })
     if (error === null) {
       toast.info("Geen verbinding: de foto is bewaard en gaat mee met het formulier. Vul het zelf in.")
@@ -136,7 +174,7 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     const rowId = form.getValues("rowId")
     // Older answers (before the function knew) have no faintWriting: then it is not faint.
     setFaintWritingFor(faintWriting ? rowId : null)
-    const copy = await enhanceScan(photo, corners)
+    const copy = await cleanCopy(photo, corners)
     await savePhoto(copy)
     form.setValue("scanPath", "", { shouldDirty: true })
     // Uploaded right away so sending is quick; if this fails, it goes up when the form is sent.
@@ -146,7 +184,7 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
           form.setValue("scanPath", path, { shouldDirty: true })
         }
       })
-      .catch((error: unknown) => console.warn("Uploading the scan copy failed; it goes with the form", error))
+      .catch((error: unknown) => reportClientError("scan.upload-copy", error, describePhoto(copy)))
     setPhase("filling")
     await typeIntoForm(fields)
     if (scannedDateDiffers(fields.datum)) setScannedDate(fields.datum)
@@ -209,6 +247,10 @@ export function useScanFill(form: SalesFormApi, userId: string, savePhoto: (phot
     acceptAnyway,
     dismissRejection,
   }
+}
+
+function describePhoto(photo: Blob) {
+  return { size: photo.size, type: photo.type }
 }
 
 function highlight(name: ExtractableField) {
