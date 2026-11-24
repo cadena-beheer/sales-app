@@ -25,6 +25,8 @@ type Line = {
   kind: string
   reason: string
   detail: string
+  /** "Man" or "Vrouw" when known: who signed, so the recruiter remembers the door. */
+  gender: string
 }
 
 /**
@@ -39,6 +41,7 @@ export function CancellationList({ items, bank }: Props) {
       on: item.returnedOn,
       kind: "Bankafval",
       detail: "",
+      gender: "",
     })),
   ].sort((a, b) => (b.on ?? "").localeCompare(a.on ?? ""))
 
@@ -67,6 +70,11 @@ export function CancellationList({ items, bank }: Props) {
                   {line.kind === "Bankafval" && "Bankafval · "}
                   {line.reason}
                 </span>
+                {(line.gender === "Man" || line.gender === "Vrouw") && (
+                  <span className="ml-1.5 inline-block rounded-md border px-2 py-0.5 text-xs font-medium text-foreground">
+                    {line.gender}
+                  </span>
+                )}
                 {line.detail && ` “${line.detail}”`}
               </p>
             </div>
