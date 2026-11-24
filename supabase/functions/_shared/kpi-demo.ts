@@ -193,6 +193,7 @@ export function demoSalesStats(from: string, to: string, recruiter: string | nul
             cancelledOn: `${toIso(cancelledOn)}T${pad(hour)}:${pad(minute)}:00`,
             reason,
             detail: reasonDetails[Math.floor(details() * reasonDetails.length)],
+            gender: ["Man", "Vrouw", ""][Math.floor(details() * 3)],
           })
         }
       }

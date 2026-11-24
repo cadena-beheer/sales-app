@@ -61,6 +61,8 @@ export const salesStatsSchema = z.object({
       cancelledOn: z.string().nullable(),
       reason: z.string(),
       detail: z.string(),
+      /** Who signed ("Getekend door" in ZMAdmin): "Man" or "Vrouw"; empty otherwise or until the endpoint sends it. */
+      gender: z.string().default(""),
     }),
   ),
   /**
