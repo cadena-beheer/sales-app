@@ -50,6 +50,7 @@ describe("toOnboardingRequest", () => {
       Wervernaam: "Anna",
       ContractType: "S",
       Betaalperiode: "BM", // ZMAdmin's quarterly code; the sheet says "KM"
+      ContractTypeId: 28, // B - M * 2023 Jaar/Kwartaal
       IBAN: "NL91ABNA0417164300",
       IBANtnv: "", // ZMAdmin then uses the surname
       Opmerkingen: "Graag bellen",
@@ -65,6 +66,16 @@ describe("toOnboardingRequest", () => {
     ["Jaar Acceptgiro", "JA"], // no longer offered, but a queued sale may still carry it
   ])("sends %s as Betaalperiode %s", (betaalperiode, code) => {
     expect(toOnboardingRequest({ ...record, betaalperiode }).Entry.AnswersJson.page1.Betaalperiode).toBe(code)
+  })
+
+  it.each([
+    ["Maand Machtiging", 27],
+    ["Kwartaal Machtiging", 28],
+    ["Jaar Machtiging", 29],
+    ["Zakelijk Jaar Machtiging", 30],
+    ["Jaar Acceptgiro", 0], // resolved from the period by the endpoint
+  ])("names the contract type of %s as ContractTypeId %i", (betaalperiode, id) => {
+    expect(toOnboardingRequest({ ...record, betaalperiode }).Entry.AnswersJson.page1.ContractTypeId).toBe(id)
   })
 
   it("sends no email for a customer who gets their mail by post", () => {

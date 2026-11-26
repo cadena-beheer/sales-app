@@ -21,6 +21,8 @@ export type OnboardingForm = {
   Wervernaam: string
   ContractType: string
   Betaalperiode: string
+  /** ZMAdmin's ContractTypes.Id; 0 lets the endpoint resolve the contract type from Betaalperiode. */
+  ContractTypeId: number
   IBAN: string
   IBANtnv: string
   Opmerkingen: string
@@ -71,6 +73,19 @@ const BETAALPERIODE_CODES: Record<string, string> = {
 }
 
 /**
+ * The product the app sells per betaaltermijn, by ZMAdmin's ContractTypes.Id (the same on production and TEST, which is
+ * restored from it). Sent because a payment period alone stops identifying a product as soon as a second one is sold
+ * next to it: the 2027 trial products made MM and JM ambiguous on 2026-11-26 and every sale from the app was refused.
+ * Changing what the app sells is a change here. The acceptgiro periods are not offered; they still resolve by period.
+ */
+const CONTRACT_TYPE_IDS: Record<string, number> = {
+  "Maand Machtiging": 27, // M - M * 2023 Jaar/Maand, € 14,95
+  "Jaar Machtiging": 29, // J - M * 2023 Jaar, € 165
+  "Kwartaal Machtiging": 28, // B - M * 2023 Jaar/Kwartaal, € 42,50
+  "Zakelijk Jaar Machtiging": 30, // Z - M * 2023 Zakelijk, € 245
+}
+
+/**
  * Dutch numbers in national form ("0612345678"), which is what ZMAdmin stores; other countries keep their
  * international form, since a national number without its country would be ambiguous.
  */
@@ -112,6 +127,7 @@ export function toOnboardingRequest(record: SubmissionRecord, photos: Onboarding
           Wervernaam: record.wervernaam,
           ContractType: CONTRACT_TYPE_CODES[record.contract_type] ?? "",
           Betaalperiode: BETAALPERIODE_CODES[record.betaalperiode] ?? "",
+          ContractTypeId: CONTRACT_TYPE_IDS[record.betaalperiode] ?? 0,
           IBAN: record.iban,
           // Empty: ZMAdmin uses the customer's surname as the account holder.
           IBANtnv: record.iban_tnv,
